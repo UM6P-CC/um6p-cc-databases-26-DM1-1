@@ -1,0 +1,44 @@
+name: Autograde
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          pip install -r tests/requirements.txt
+
+      - name: Wait for MySQL
+        run: |
+          until mysqladmin ping \
+            -h127.0.0.1 \
+            -uroot \
+            -proot \
+            --silent
+          do
+            sleep 2
+          done
+
+      - name: Run tests
+        run: |
+          pytest tests -v
