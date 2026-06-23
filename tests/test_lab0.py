@@ -33,7 +33,7 @@ def test_01_create_database(cursor):
     """
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    CREATE DATABASE IF NOT EXISTS LibraryDB
     """
 
     cursor.execute(sql)
@@ -59,7 +59,13 @@ def test_02_create_members_table(connection):
     """
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    CREATE TABLE IF NOT EXISTS Members (
+        member_id INT PRIMARY KEY,
+        first_name VARCHAR(100) NOT NULL,
+        last_name VARCHAR(100) NOT NULL,
+        age INT,
+        city VARCHAR(100)
+    )
     """
 
     cur = connection.cursor()
@@ -102,7 +108,11 @@ def test_03_create_books_table(connection):
     """
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    CREATE TABLE IF NOT EXISTS Books (
+        book_id INT PRIMARY KEY,
+        title VARCHAR(255),
+        category VARCHAR(100)
+    )
     """
 
     cur = connection.cursor()
@@ -132,7 +142,12 @@ def test_04_create_librarians_table(connection):
     """
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    CREATE TABLE IF NOT EXISTS Librarians (
+        librarian_id INT PRIMARY KEY,
+        first_name VARCHAR(100),
+        last_name VARCHAR(100),
+        section VARCHAR(100)
+    )
     """
 
     cur = connection.cursor()
@@ -164,7 +179,12 @@ def test_05_create_loans_table(connection):
     """
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    CREATE TABLE IF NOT EXISTS Loans (
+        loan_id INT PRIMARY KEY,
+        member_id INT,
+        book_id INT,
+        loan_period VARCHAR(100)
+    )
     """
 
     cur = connection.cursor()
@@ -187,7 +207,11 @@ def test_06_insert_members(connection):
     """
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    INSERT IGNORE INTO Members (member_id, first_name, last_name, age, city)
+    VALUES
+        (1, 'Amine', 'El Idrissi', 20, 'Casablanca'),
+        (2, 'Fatima', 'Benali', 21, 'Rabat'),
+        (3, 'Youssef', 'Mansouri', 23, 'Marrakech')
     """
 
     cur = connection.cursor()
@@ -212,7 +236,11 @@ def test_07_insert_books(connection):
     """
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    INSERT IGNORE INTO Books (book_id, title, category)
+    VALUES
+        (1, 'Introduction to Databases', 'Databases'),
+        (2, 'Discrete Mathematics', 'Mathematics'),
+        (3, 'Operating Systems Concepts', 'Computer Science')
     """
 
     cur = connection.cursor()
@@ -240,7 +268,11 @@ def test_08_insert_librarians(connection):
     """
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    INSERT IGNORE INTO Librarians (librarian_id, first_name, last_name, section)
+    VALUES
+        (1, 'Laila', 'Hassan', 'Circulation'),
+        (2, 'Rachid', 'Bennani', 'Reference'),
+        (3, 'Najwa', 'El Amrani', 'Digital Resources')
     """
 
     cur = connection.cursor()
@@ -267,7 +299,11 @@ def test_09_insert_loans(connection):
     """
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    INSERT IGNORE INTO Loans (loan_id, member_id, book_id, loan_period)
+    VALUES
+        (1, 1, 1, 'January 2026'),
+        (2, 2, 2, 'January 2026'),
+        (3, 3, 3, 'February 2026')
     """
 
     cur = connection.cursor()
@@ -295,7 +331,8 @@ def test_10_list_all_members(connection):
     cur.execute("USE LibraryDB")
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT *
+    FROM Members
     """
 
     cur.execute(sql)
@@ -317,7 +354,9 @@ def test_11_list_book_titles(connection):
     cur.execute("USE LibraryDB")
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT title
+    FROM Books
+    ORDER BY book_id
     """
 
     cur.execute(sql)
@@ -343,7 +382,9 @@ def test_12_members_older_than_20(connection):
     cur.execute("USE LibraryDB")
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT *
+    FROM Members
+    WHERE age > 20
     """
 
     cur.execute(sql)
@@ -366,7 +407,9 @@ def test_13_librarians_digital_resources(connection):
     cur.execute("USE LibraryDB")
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT *
+    FROM Librarians
+    WHERE section = 'Digital Resources'
     """
 
     cur.execute(sql)
@@ -389,7 +432,9 @@ def test_14_january_loans(connection):
     cur.execute("USE LibraryDB")
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT *
+    FROM Loans
+    WHERE loan_period = 'January 2026'
     """
 
     cur.execute(sql)
@@ -411,7 +456,8 @@ def test_15_distinct_cities(connection):
     cur.execute("USE LibraryDB")
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT DISTINCT city
+    FROM Members
     """
 
     cur.execute(sql)
@@ -440,7 +486,8 @@ def test_16_member_count(connection):
     cur.execute("USE LibraryDB")
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT COUNT(*)
+    FROM Members
     """
 
     cur.execute(sql)
@@ -462,7 +509,8 @@ def test_17_average_age(connection):
     cur.execute("USE LibraryDB")
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT AVG(age)
+    FROM Members
     """
 
     cur.execute(sql)
@@ -485,7 +533,9 @@ def test_18_names_starting_with_s(connection):
     cur.execute("USE LibraryDB")
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT *
+    FROM Members
+    WHERE first_name LIKE 'S%'
     """
 
     cur.execute(sql)
@@ -508,7 +558,9 @@ def test_19_age_between_20_and_22(connection):
     cur.execute("USE LibraryDB")
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT *
+    FROM Members
+    WHERE age BETWEEN 20 AND 22
     """
 
     cur.execute(sql)
@@ -531,7 +583,9 @@ def test_20_sorted_members(connection):
     cur.execute("USE LibraryDB")
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT *
+    FROM Members
+    ORDER BY city ASC, age DESC
     """
 
     cur.execute(sql)
@@ -556,7 +610,9 @@ def test_21_first_two_members(connection):
     cur.execute("USE LibraryDB")
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT *
+    FROM Members
+    LIMIT 2
     """
 
     cur.execute(sql)
@@ -579,7 +635,9 @@ def test_22_loans_grouped_by_period(connection):
     cur.execute("USE LibraryDB")
 
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT loan_period, COUNT(*)
+    FROM Loans
+    GROUP BY loan_period
     """
 
     cur.execute(sql)
