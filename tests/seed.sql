@@ -28,9 +28,17 @@ INSERT INTO ResearchUser (PersonID, AcademicCategory, InstitutionalStatus) VALUE
 ('P00008', 'Master',   'Active'),
 ('P00009', 'Faculty',  'Active');
 
-INSERT INTO TechnicalStaff (PersonID, Role, ExpertiseArea, HireDate) VALUES
-('P00010', 'Lab Technician', 'Electronics', '2020-01-15'),
-('P00011', 'Lab Technician', 'Chemistry',   '2019-06-01');
+INSERT INTO TechnicalStaff (PersonID, Role, ExpertiseArea) VALUES
+('P00010', 'Lab Technician', 'Electronics'),
+('P00011', 'Lab Technician', 'Chemistry');
+
+-- Both seeded technical staff are internal employees (no external/contracted
+-- technicians needed by any of the 15 Lab 3 queries, which never touch
+-- TechnicalStaff/InternalTechnician/ExternalTechnician/Maintenance at all --
+-- these rows exist only for schema completeness).
+INSERT INTO InternalTechnician (PersonID, HireDate) VALUES
+('P00010', '2020-01-15'),
+('P00011', '2019-06-01');
 
 -- ============================================================
 -- LABORATORIES

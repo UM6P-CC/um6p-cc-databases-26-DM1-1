@@ -20,12 +20,48 @@ CREATE TABLE ResearchUser (
     FOREIGN KEY (PersonID) REFERENCES Person(PersonID)
 );
 
+-- The company itself: tracked independently of any individual technician.
+-- ContactPerson/Phone here represent a generic point of contact for the
+-- company (e.g. an account manager), which may differ from whichever
+-- specific ExternalTechnician person is dispatched for a given job.
+CREATE TABLE ServiceProvider (
+    ProviderID        CHAR(6) PRIMARY KEY,
+    CompanyName       VARCHAR(120) NOT NULL,
+    ContactPerson     VARCHAR(100),
+    Phone             VARCHAR(25),
+    ContractReference VARCHAR(60)
+);
+
 CREATE TABLE TechnicalStaff (
     PersonID      CHAR(6) PRIMARY KEY,
     Role          VARCHAR(60),
     ExpertiseArea VARCHAR(100),
-    HireDate      DATE,
     FOREIGN KEY (PersonID) REFERENCES Person(PersonID)
+);
+
+-- ISA under TechnicalStaff: every technician is internal or external (total,
+-- disjoint -- a TechnicalStaff row should have exactly one of these two
+-- matching child rows). "Hire date" only makes sense for an employee, so it
+-- moves here rather than living on the shared TechnicalStaff parent.
+CREATE TABLE InternalTechnician (
+    PersonID CHAR(6) PRIMARY KEY,
+    HireDate DATE,
+    FOREIGN KEY (PersonID) REFERENCES TechnicalStaff(PersonID)
+);
+
+-- An external technician is still a PERSON (they show up and do the work),
+-- but they work on behalf of a company. CompanyName/ContractReference are
+-- the technician's own attributes here (which company, under which
+-- contract, they are currently associated with); the company itself -- with
+-- its own generic point of contact, independent of any one technician -- is
+-- tracked separately in ServiceProvider below.
+CREATE TABLE ExternalTechnician (
+    PersonID          CHAR(6) PRIMARY KEY,
+    CompanyName       VARCHAR(120),
+    ContractReference VARCHAR(60),
+    ProviderID        CHAR(6),
+    FOREIGN KEY (PersonID) REFERENCES TechnicalStaff(PersonID),
+    FOREIGN KEY (ProviderID) REFERENCES ServiceProvider(ProviderID)
 );
 
 CREATE TABLE Laboratory (
@@ -145,19 +181,11 @@ CREATE TABLE UsageSession (
     FOREIGN KEY (ProjectCode) REFERENCES ResearchProject(ProjectCode)
 );
 
--- VERIFY: ServiceProvider columns (CompanyName/ContactPerson/Phone/ContractReference
--- confirmed by Lab 1 text; exact PK name uncertain -> using ProviderID)
-CREATE TABLE ServiceProvider (
-    ProviderID        CHAR(6) PRIMARY KEY,
-    CompanyName       VARCHAR(120) NOT NULL,
-    ContactPerson     VARCHAR(100),
-    Phone             VARCHAR(25),
-    ContractReference VARCHAR(60)
-);
-
--- VERIFY: Maintenance technician is "exactly one technician, internal or external"
--- per Lab 1 text -> modeled as nullable FK to TechnicalStaff OR ServiceProvider
--- (mutually exclusive in practice, not enforced here).
+-- VERIFY: Maintenance technician is "exactly one technician, internal or
+-- external" per Lab 1 text -> the internal/external distinction now lives
+-- in the TechnicalStaff ISA hierarchy (InternalTechnician/ExternalTechnician
+-- above) rather than as two separate nullable FKs here, so Maintenance only
+-- needs a single FK to TechnicalStaff.
 CREATE TABLE Maintenance (
     MaintenanceID    CHAR(6) PRIMARY KEY,
     MaintenanceDate  DATE,
@@ -167,11 +195,11 @@ CREATE TABLE Maintenance (
     DowntimeDuration INT,          -- VERIFY: unit (hours?)
     Outcome          VARCHAR(100),
     SerialNumber     CHAR(10) NOT NULL,
-    TechnicianID     CHAR(6),      -- FK -> TechnicalStaff(PersonID), nullable
-    ProviderID       CHAR(6),      -- FK -> ServiceProvider(ProviderID), nullable
+    TechnicianID     CHAR(6) NOT NULL,  -- FK -> TechnicalStaff(PersonID); resolves
+                                         -- to an InternalTechnician or
+                                         -- ExternalTechnician row
     FOREIGN KEY (SerialNumber) REFERENCES EquipmentUnit(SerialNumber),
-    FOREIGN KEY (TechnicianID) REFERENCES TechnicalStaff(PersonID),
-    FOREIGN KEY (ProviderID) REFERENCES ServiceProvider(ProviderID)
+    FOREIGN KEY (TechnicianID) REFERENCES TechnicalStaff(PersonID)
 );
 
 -- Weak entity: identified by (SerialNumber, CalibrationNumber)
