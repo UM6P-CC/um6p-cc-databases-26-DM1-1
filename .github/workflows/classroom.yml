@@ -1,49 +1,3 @@
-# name: Autograde
-
-# on:
-#   push:
-#   pull_request:
-
-# jobs:
-#   grade:
-#     runs-on: ubuntu-latest
-
-#     services:
-#       mysql:
-#         image: mysql:8.0
-#         env:
-#           MYSQL_ROOT_PASSWORD: root
-#         ports:
-#           - 3306:3306
-
-#     steps:
-#       - uses: actions/checkout@v4
-
-#       - name: Install Python
-#         uses: actions/setup-python@v5
-#         with:
-#           python-version: "3.11"
-
-#       - name: Install deps
-#         run: |
-#           pip install -r tests/requirements.txt
-
-#       - name: Wait for MySQL
-#         run: |
-#           until mysqladmin ping \
-#             -h127.0.0.1 \
-#             -uroot \
-#             -proot \
-#             --silent
-#           do
-#             sleep 2
-#           done
-
-#       - name: Run tests
-#         run: |
-#           pytest tests -v
-
-
 name: Autograde
 on:
   push:
@@ -77,31 +31,42 @@ jobs:
           do
             sleep 2
           done
-      # tests/lab3_answers.py holds the private EXPECTED_RESULTS for Lab 3
-      # and is intentionally NOT committed to the repo (see test_lab3.py's
-      # header docstring). It is reconstructed here, only inside this
-      # ephemeral runner, from a base64-encoded secret -- this keeps the
-      # answer key out of every student's forked repo while still letting
-      # grading run fully unattended on every push.
+      # tests/lab3_answers.py, tests/lab3_answers_shadow.py, and
+      # tests/seed_shadow.sql together form the private half of the Lab 3
+      # autograder: the public expected-results dict, the SECOND hidden
+      # verification dataset's expected-results dict, and the second hidden
+      # dataset itself. None of the three are committed to the repo (see
+      # test_lab3.py's header docstring) -- every student query is run
+      # against BOTH the public seed.sql database and this hidden shadow
+      # database, and only earns credit if it matches both. This defeats a
+      # student who reads seed.sql or brute-forces pass/fail feedback and
+      # hardcodes literal IDs instead of writing genuine join/filter logic.
+      #
+      # All three files are bundled into one base64-encoded tar.gz secret
+      # so a single reconstruction step (and a single secret to manage)
+      # covers all of them.
       #
       # ONE-TIME SETUP (instructor does this once, not per student):
-      #   1. base64 -w0 lab3_answers.py   (copy the output)
-      #   2. In this repo (or the GitHub Classroom organization, to cover
+      #   1. tar czf lab3_private_bundle.tar.gz lab3_answers.py lab3_answers_shadow.py seed_shadow.sql
+      #   2. base64 -w0 lab3_private_bundle.tar.gz   (copy the output)
+      #   3. In this repo (or the GitHub Classroom organization, to cover
       #      every student repo at once): Settings > Secrets and variables
-      #      > Actions > New secret named LAB3_ANSWERS_B64, paste the
-      #      base64 string as the value.
-      - name: Reconstruct private Lab 3 answer key
+      #      > Actions > New secret named LAB3_PRIVATE_BUNDLE_B64, paste
+      #      the base64 string as the value.
+      - name: Reconstruct private Lab 3 files
         env:
-          LAB3_ANSWERS_B64: ${{ secrets.LAB3_ANSWERS_B64 }}
+          LAB3_PRIVATE_BUNDLE_B64: ${{ secrets.LAB3_PRIVATE_BUNDLE_B64 }}
         run: |
-          if [ -z "$LAB3_ANSWERS_B64" ]; then
-            echo "::error::LAB3_ANSWERS_B64 secret is not set. Add it under Settings > Secrets and variables > Actions (instructor-only, one-time setup)."
+          if [ -z "$LAB3_PRIVATE_BUNDLE_B64" ]; then
+            echo "::error::LAB3_PRIVATE_BUNDLE_B64 secret is not set. Add it under Settings > Secrets and variables > Actions (instructor-only, one-time setup)."
             exit 1
           fi
-          echo "$LAB3_ANSWERS_B64" | base64 -d > tests/lab3_answers.py
+          echo "$LAB3_PRIVATE_BUNDLE_B64" | base64 -d > /tmp/lab3_private_bundle.tar.gz
+          tar xzf /tmp/lab3_private_bundle.tar.gz -C tests
+          rm -f /tmp/lab3_private_bundle.tar.gz
       - name: Run tests
         run: |
           pytest tests -v
-      - name: Clean up reconstructed answer key
+      - name: Clean up reconstructed private files
         if: always()
-        run: rm -f tests/lab3_answers.py
+        run: rm -f tests/lab3_answers.py tests/lab3_answers_shadow.py tests/seed_shadow.sql
