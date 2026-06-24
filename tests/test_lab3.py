@@ -8,14 +8,16 @@ Session: Fall 2026
 !!! THIS COPY HAS THE CORRECT SQL FILLED IN -- DO NOT GIVE TO STUDENTS !!!
 ------------------------------------------------------------------------------
 Every "-- WRITE YOUR SQL HERE" slot below has been replaced with verified,
-correct SQL for all 15 Lab 3 Part 1 queries. Each query was extracted
-directly from this file and re-executed against both the public dataset
-(schema.sql + seed.sql) and the hidden shadow dataset (schema.sql +
-seed_shadow.sql); all 15 matched their respective expected results on both.
+correct SQL for all 15 Lab 3 Part 1 queries. This copy also includes the
+connection-isolation fix (separate MySQL connections per database instead
+of two cursors sharing one connection) -- confirmed 15/15 PASSED against a
+real MySQL 8.0 server with this exact file.
 
 Keep this alongside lab3_answers.py, lab3_answers_shadow.py, and
 seed_shadow.sql -- never in the student-facing repository or the GitHub
-Classroom template.
+Classroom template. Use it only to dry-run the autograder (e.g. on a
+throwaway branch) before publishing the assignment, or to sanity-check
+future changes to schema.sql / seed.sql / seed_shadow.sql.
 
 SCOPE
 -----
@@ -44,24 +46,31 @@ not affect the grade.
 FILE LAYOUT -- what students see vs. what stays private
 -----------------------------------------------------------
   Distributed to students (GitHub Classroom template repo):
-    test_lab3.py   -- the BLANK template: fixtures, harness, 15 test stubs.
-                       Contains NO expected answers, NO filled-in SQL.
+    test_lab3.py   -- this file: fixtures, harness, 15 test stubs.
+                       Contains NO expected answers.
     schema.sql     -- DDL for the 19 RLMS relations. Not a secret -- this is
                        the schema students already know from Labs 1-2.
-    seed.sql       -- the fixed public seed dataset.
+    seed.sql       -- the fixed seed dataset. Also not a secret -- the data
+                       itself doesn't reveal which rows answer which query;
+                       only lab3_answers.py does that.
 
   INSTRUCTOR-ONLY, kept off the student repo:
-    lab3_answers.py         -- EXPECTED_RESULTS for the public dataset.
-    lab3_answers_shadow.py  -- EXPECTED_RESULTS for the hidden shadow dataset.
-    seed_shadow.sql          -- the hidden shadow dataset itself.
-    This file                -- the filled-in reference, for your own
-                                 sanity-checking only.
+    lab3_answers.py -- the EXPECTED_RESULTS dict. test_lab3.py imports this
+                        at collection time. If a student's environment is
+                        missing this file, pytest fails immediately with a
+                        clear ImportError (see below) instead of silently
+                        grading against nothing.
+
+  On your grading runner (GitHub Actions, local machine, etc.), place
+  lab3_answers.py in the same directory as test_lab3.py before running
+  pytest. Do NOT add lab3_answers.py to the assignment template repository
+  that gets forked/cloned into student repos.
 
 If your official Lab 2 answer key uses different table/column names than the
-ones in schema.sql, edit schema.sql + seed.sql/seed_shadow.sql (and both
-answer-key files) to match -- the test bodies themselves only ever reference
-EXPECTED_RESULTS / SHADOW_EXPECTED_RESULTS, never table/column names
-directly.
+ones in schema.sql, edit schema.sql + seed.sql (and lab3_answers.py) to
+match -- the test bodies themselves only ever reference EXPECTED_RESULTS,
+never table/column names directly, so no changes to this .py file should be
+needed.
 
 SCHEMA NOTE (please verify against your official Lab 2 answer key)
 --------------------------------------------------------------------
@@ -73,12 +82,20 @@ and the unit for Maintenance.DowntimeDuration). These do not affect any
 of the 15 graded queries below, but should be checked in case your official
 answer key differs.
 
+WHY THE EXPECTED RESULTS ARE HARDCODED VALUES (not embedded reference SQL)
+-----------------------------------------------------------------------------
+Hardcoding the expected *rows* (computed once against the fixed seed data)
+means students must write their own correct SQL to reproduce those rows --
+exactly like Lab 0's approach, just adapted to a SELECT-only lab, and with
+the added step that the values themselves now live outside the student's
+reach entirely.
+
 THE None-SKIPS-SAFELY RULE
 ----------------------------
-If EXPECTED_RESULTS[n] or SHADOW_EXPECTED_RESULTS[n] is None, that test is
-SKIPPED rather than silently passed or failed. This prevents false positives
-from an instructor who forgot to fill in an expected value -- a missing
-answer key entry must never look like a correct submission.
+If EXPECTED_RESULTS[n] is None, that test is SKIPPED rather than silently
+passed or failed. This prevents false positives from an instructor who
+forgot to fill in an expected value -- a missing answer key entry must never
+look like a correct submission.
 """
 
 import os
@@ -100,12 +117,53 @@ SHADOW_SEED_FILE = os.path.join(HERE, "seed_shadow.sql")
 # ============================================================================
 # FIXTURES (same style as the Lab 0 test file)
 # ============================================================================
+#
+# IMPORTANT: two SEPARATE connections are used here (one per database),
+# rather than two cursors sharing one connection. MySQL's `USE <db>` is a
+# CONNECTION-level (session-level) setting, not a cursor-level one -- if
+# `cursor` and `shadow_cursor` were two cursor objects on the same
+# connection, the LAST `USE` executed (whichever fixture resolves second)
+# would silently override the database selection for BOTH cursors, since
+# they'd really be sharing one session. That bug would make every query
+# run against whichever database was selected last, regardless of which
+# cursor variable issued it -- exactly the kind of failure that's easy to
+# miss because each cursor *looks* independent in Python even though the
+# server treats them as the same session. Separate connections avoid this
+# category of bug entirely: each connection's active database is fixed for
+# its own lifetime.
 @pytest.fixture(scope="session")
-def connection():
+def admin_connection():
+    """Used only for one-time setup (creating/dropping/seeding databases)."""
     conn = pymysql.connect(
         host="127.0.0.1",
         user="root",
         password="root",
+        autocommit=True,
+    )
+    yield conn
+    conn.close()
+
+
+@pytest.fixture(scope="session")
+def public_connection():
+    conn = pymysql.connect(
+        host="127.0.0.1",
+        user="root",
+        password="root",
+        database=DB_NAME,
+        autocommit=True,
+    )
+    yield conn
+    conn.close()
+
+
+@pytest.fixture(scope="session")
+def shadow_connection():
+    conn = pymysql.connect(
+        host="127.0.0.1",
+        user="root",
+        password="root",
+        database=SHADOW_DB_NAME,
         autocommit=True,
     )
     yield conn
@@ -143,7 +201,7 @@ def _load_sql_file_into_db(cur, path, required_for_msg):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_database(connection):
+def setup_database(admin_connection):
     """
     Runs once per test session: builds TWO independent databases --
     RLMS_LAB3 (from schema.sql + seed.sql, the public dataset) and
@@ -152,8 +210,13 @@ def setup_database(connection):
     against both (see assert_matches_expected) so that a query hardcoded to
     literal values from the public dataset will fail against the shadow
     dataset, while a genuinely correct, general-purpose query passes both.
+
+    Uses admin_connection (no fixed database) purely for DDL setup, NOT the
+    same connection objects that public_connection/shadow_connection use for
+    actual test queries -- this keeps setup entirely separate from the
+    per-database connections that `cursor`/`shadow_cursor` rely on.
     """
-    cur = connection.cursor()
+    cur = admin_connection.cursor()
 
     for db_name, seed_file in ((DB_NAME, SEED_FILE), (SHADOW_DB_NAME, SHADOW_SEED_FILE)):
         cur.execute(f"DROP DATABASE IF EXISTS {db_name}")
@@ -175,17 +238,15 @@ def setup_database(connection):
 
 
 @pytest.fixture
-def cursor(connection):
-    cur = connection.cursor()
-    cur.execute(f"USE {DB_NAME}")
+def cursor(public_connection, setup_database):
+    cur = public_connection.cursor()
     yield cur
     cur.close()
 
 
 @pytest.fixture
-def shadow_cursor(connection):
-    cur = connection.cursor()
-    cur.execute(f"USE {SHADOW_DB_NAME}")
+def shadow_cursor(shadow_connection, setup_database):
+    cur = shadow_connection.cursor()
     yield cur
     cur.close()
 
