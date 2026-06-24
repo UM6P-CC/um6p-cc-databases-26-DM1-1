@@ -1,9 +1,21 @@
 """
-Lab 3 Autograder -- Relational Algebra, SQL and Functional Dependencies (RLMS)
+Lab 3 Autograder -- FILLED-IN REFERENCE (instructor-only, NOT the student template)
 ================================================================================
 Course : Data Management -- UM6P, College of Computing
 Prof.  : Karima Echihabi
 Session: Fall 2026
+
+!!! THIS COPY HAS THE CORRECT SQL FILLED IN -- DO NOT GIVE TO STUDENTS !!!
+------------------------------------------------------------------------------
+Every "-- WRITE YOUR SQL HERE" slot below has been replaced with verified,
+correct SQL for all 15 Lab 3 Part 1 queries. Each query was extracted
+directly from this file and re-executed against both the public dataset
+(schema.sql + seed.sql) and the hidden shadow dataset (schema.sql +
+seed_shadow.sql); all 15 matched their respective expected results on both.
+
+Keep this alongside lab3_answers.py, lab3_answers_shadow.py, and
+seed_shadow.sql -- never in the student-facing repository or the GitHub
+Classroom template.
 
 SCOPE
 -----
@@ -32,31 +44,24 @@ not affect the grade.
 FILE LAYOUT -- what students see vs. what stays private
 -----------------------------------------------------------
   Distributed to students (GitHub Classroom template repo):
-    test_lab3.py   -- this file: fixtures, harness, 15 test stubs.
-                       Contains NO expected answers.
+    test_lab3.py   -- the BLANK template: fixtures, harness, 15 test stubs.
+                       Contains NO expected answers, NO filled-in SQL.
     schema.sql     -- DDL for the 19 RLMS relations. Not a secret -- this is
                        the schema students already know from Labs 1-2.
-    seed.sql       -- the fixed seed dataset. Also not a secret -- the data
-                       itself doesn't reveal which rows answer which query;
-                       only lab3_answers.py does that.
+    seed.sql       -- the fixed public seed dataset.
 
   INSTRUCTOR-ONLY, kept off the student repo:
-    lab3_answers.py -- the EXPECTED_RESULTS dict. test_lab3.py imports this
-                        at collection time. If a student's environment is
-                        missing this file, pytest fails immediately with a
-                        clear ImportError (see below) instead of silently
-                        grading against nothing.
-
-  On your grading runner (GitHub Actions, local machine, etc.), place
-  lab3_answers.py in the same directory as test_lab3.py before running
-  pytest. Do NOT add lab3_answers.py to the assignment template repository
-  that gets forked/cloned into student repos.
+    lab3_answers.py         -- EXPECTED_RESULTS for the public dataset.
+    lab3_answers_shadow.py  -- EXPECTED_RESULTS for the hidden shadow dataset.
+    seed_shadow.sql          -- the hidden shadow dataset itself.
+    This file                -- the filled-in reference, for your own
+                                 sanity-checking only.
 
 If your official Lab 2 answer key uses different table/column names than the
-ones in schema.sql, edit schema.sql + seed.sql (and lab3_answers.py) to
-match -- the test bodies themselves only ever reference EXPECTED_RESULTS,
-never table/column names directly, so no changes to this .py file should be
-needed.
+ones in schema.sql, edit schema.sql + seed.sql/seed_shadow.sql (and both
+answer-key files) to match -- the test bodies themselves only ever reference
+EXPECTED_RESULTS / SHADOW_EXPECTED_RESULTS, never table/column names
+directly.
 
 SCHEMA NOTE (please verify against your official Lab 2 answer key)
 --------------------------------------------------------------------
@@ -68,20 +73,12 @@ and the unit for Maintenance.DowntimeDuration). These do not affect any
 of the 15 graded queries below, but should be checked in case your official
 answer key differs.
 
-WHY THE EXPECTED RESULTS ARE HARDCODED VALUES (not embedded reference SQL)
------------------------------------------------------------------------------
-Hardcoding the expected *rows* (computed once against the fixed seed data)
-means students must write their own correct SQL to reproduce those rows --
-exactly like Lab 0's approach, just adapted to a SELECT-only lab, and with
-the added step that the values themselves now live outside the student's
-reach entirely.
-
 THE None-SKIPS-SAFELY RULE
 ----------------------------
-If EXPECTED_RESULTS[n] is None, that test is SKIPPED rather than silently
-passed or failed. This prevents false positives from an instructor who
-forgot to fill in an expected value -- a missing answer key entry must never
-look like a correct submission.
+If EXPECTED_RESULTS[n] or SHADOW_EXPECTED_RESULTS[n] is None, that test is
+SKIPPED rather than silently passed or failed. This prevents false positives
+from an instructor who forgot to fill in an expected value -- a missing
+answer key entry must never look like a correct submission.
 """
 
 import os
@@ -314,7 +311,10 @@ def test_01_research_users_with_reservation(cursor, shadow_cursor):
     Find the names of research users who have made at least one reservation.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT DISTINCT p.FullName
+    FROM Person p
+    JOIN ResearchUser ru ON p.PersonID = ru.PersonID
+    JOIN Reservation r ON r.PersonID = p.PersonID
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[1], SHADOW_EXPECTED_RESULTS[1], "Q1")
 
@@ -327,7 +327,12 @@ def test_02_users_attached_or_leading_project(cursor, shadow_cursor):
     or are leading at least one research project.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT DISTINCT ru.PersonID
+    FROM ResearchUser ru
+    WHERE ru.PersonID IN (SELECT PersonID FROM AttachedTo)
+       OR ru.PersonID IN (
+           SELECT PersonID FROM ProjectParticipation WHERE ProjectRole = 'PI'
+       )
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[2], SHADOW_EXPECTED_RESULTS[2], "Q2")
 
@@ -340,7 +345,15 @@ def test_03_labs_research_center_a_or_microscope(cursor, shadow_cursor):
     or having at least one equipment item of category 'Microscope'.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT DISTINCT l.LabID
+    FROM Laboratory l
+    WHERE l.Building = 'Research Center A'
+       OR l.LabID IN (
+           SELECT eu.LabID
+           FROM EquipmentUnit eu
+           JOIN EquipmentModel em ON eu.ModelID = em.ModelID
+           WHERE em.Category = 'Microscope'
+       )
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[3], SHADOW_EXPECTED_RESULTS[3], "Q3")
 
@@ -353,7 +366,12 @@ def test_04_labs_with_microscope_and_centrifuge(cursor, shadow_cursor):
     'Centrifuge' equipment.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT eu.LabID
+    FROM EquipmentUnit eu
+    JOIN EquipmentModel em ON eu.ModelID = em.ModelID
+    WHERE em.Category IN ('Microscope', 'Centrifuge')
+    GROUP BY eu.LabID
+    HAVING COUNT(DISTINCT em.Category) = 2
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[4], SHADOW_EXPECTED_RESULTS[4], "Q4")
 
@@ -366,7 +384,13 @@ def test_05_supervisors_of_every_north_wing_lab(cursor, shadow_cursor):
     building 'North Wing'.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT ru.PersonID
+    FROM ResearchUser ru
+    WHERE NOT EXISTS (
+        SELECT 1 FROM Laboratory l
+        WHERE l.Building = 'North Wing'
+          AND (l.SupervisorID IS NULL OR l.SupervisorID <> ru.PersonID)
+    )
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[5], SHADOW_EXPECTED_RESULTS[5], "Q5")
 
@@ -379,7 +403,18 @@ def test_06_participants_in_every_lab2_project(cursor, shadow_cursor):
     supervised by laboratory with LabID = 2.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT ru.PersonID
+    FROM ResearchUser ru
+    WHERE NOT EXISTS (
+        SELECT 1 FROM ProjectParticipation pp_lead
+        WHERE pp_lead.PersonID = (SELECT SupervisorID FROM Laboratory WHERE LabID = 'L0002')
+          AND pp_lead.ProjectRole = 'PI'
+          AND NOT EXISTS (
+              SELECT 1 FROM ProjectParticipation pp_self
+              WHERE pp_self.PersonID = ru.PersonID
+                AND pp_self.ProjectCode = pp_lead.ProjectCode
+          )
+    )
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[6], SHADOW_EXPECTED_RESULTS[6], "Q6")
 
@@ -392,7 +427,10 @@ def test_07_pairs_more_reservations(cursor, shadow_cursor):
     reservations than r2.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT a.PersonID, b.PersonID
+    FROM (SELECT PersonID, COUNT(*) AS c FROM Reservation GROUP BY PersonID) a,
+         (SELECT PersonID, COUNT(*) AS c FROM Reservation GROUP BY PersonID) b
+    WHERE a.c > b.c
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[7], SHADOW_EXPECTED_RESULTS[7], "Q7")
 
@@ -405,7 +443,11 @@ def test_08_users_reserved_two_different_labs(cursor, shadow_cursor):
     belonging to at least two different laboratories.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT r.PersonID
+    FROM Reservation r
+    JOIN EquipmentUnit eu ON r.SerialNumber = eu.SerialNumber
+    GROUP BY r.PersonID
+    HAVING COUNT(DISTINCT eu.LabID) >= 2
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[8], SHADOW_EXPECTED_RESULTS[8], "Q8")
 
@@ -418,7 +460,13 @@ def test_09_september_2026_biolab_a_reservations(cursor, shadow_cursor):
     equipment units located in the laboratory named 'BioLab-A'.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT r.ReservationID
+    FROM Reservation r
+    JOIN EquipmentUnit eu ON r.SerialNumber = eu.SerialNumber
+    JOIN Laboratory l ON eu.LabID = l.LabID
+    WHERE l.Name = 'BioLab-A'
+      AND r.PlannedStartTime >= '2026-09-01 00:00:00'
+      AND r.PlannedStartTime <  '2026-10-01 00:00:00'
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[9], SHADOW_EXPECTED_RESULTS[9], "Q9")
 
@@ -430,7 +478,11 @@ def test_10_users_leading_more_than_one_project(cursor, shadow_cursor):
     Find the IDs of research users who lead more than one research project.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT PersonID
+    FROM ProjectParticipation
+    WHERE ProjectRole = 'PI'
+    GROUP BY PersonID
+    HAVING COUNT(*) > 1
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[10], SHADOW_EXPECTED_RESULTS[10], "Q10")
 
@@ -443,7 +495,12 @@ def test_11_users_approved_in_multiple_labs(cursor, shadow_cursor):
     than one laboratory.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT r.ApprovedBy
+    FROM Reservation r
+    JOIN EquipmentUnit eu ON r.SerialNumber = eu.SerialNumber
+    WHERE r.ApprovedBy IS NOT NULL
+    GROUP BY r.ApprovedBy
+    HAVING COUNT(DISTINCT eu.LabID) > 1
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[11], SHADOW_EXPECTED_RESULTS[11], "Q11")
 
@@ -456,7 +513,13 @@ def test_12_users_no_reservation_nov_6_2026(cursor, shadow_cursor):
     November 6, 2026.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT ru.PersonID
+    FROM ResearchUser ru
+    WHERE ru.PersonID NOT IN (
+        SELECT PersonID FROM Reservation
+        WHERE PlannedStartTime >= '2026-11-06 00:00:00'
+          AND PlannedStartTime <  '2026-11-07 00:00:00'
+    )
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[12], SHADOW_EXPECTED_RESULTS[12], "Q12")
 
@@ -469,7 +532,15 @@ def test_13_labs_below_average_equipment_count(cursor, shadow_cursor):
     number of equipment units per laboratory.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT l.LabID
+    FROM Laboratory l
+    LEFT JOIN EquipmentUnit eu ON l.LabID = eu.LabID
+    GROUP BY l.LabID
+    HAVING COUNT(eu.SerialNumber) < (
+        SELECT AVG(cnt) FROM (
+            SELECT COUNT(*) AS cnt FROM EquipmentUnit GROUP BY LabID
+        ) t
+    )
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[13], SHADOW_EXPECTED_RESULTS[13], "Q13")
 
@@ -482,7 +553,20 @@ def test_14_top_approver_per_lab(cursor, shadow_cursor):
     number of approved reservations in that laboratory.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT eu.LabID, r.PersonID
+    FROM Reservation r
+    JOIN EquipmentUnit eu ON r.SerialNumber = eu.SerialNumber
+    WHERE r.Status = 'Approved'
+    GROUP BY eu.LabID, r.PersonID
+    HAVING COUNT(*) = (
+        SELECT MAX(c) FROM (
+            SELECT COUNT(*) AS c
+            FROM Reservation r2
+            JOIN EquipmentUnit eu2 ON r2.SerialNumber = eu2.SerialNumber
+            WHERE r2.Status = 'Approved' AND eu2.LabID = eu.LabID
+            GROUP BY r2.PersonID
+        ) sub
+    )
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[14], SHADOW_EXPECTED_RESULTS[14], "Q14")
 
@@ -495,6 +579,11 @@ def test_15_users_three_plus_reservations_2025(cursor, shadow_cursor):
     year 2025.
     """
     sql = """
-    -- WRITE YOUR SQL HERE
+    SELECT PersonID
+    FROM Reservation
+    WHERE PlannedStartTime >= '2025-01-01 00:00:00'
+      AND PlannedStartTime <  '2026-01-01 00:00:00'
+    GROUP BY PersonID
+    HAVING COUNT(*) >= 3
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[15], SHADOW_EXPECTED_RESULTS[15], "Q15")
