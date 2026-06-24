@@ -1,13 +1,56 @@
-name: Autograde
+# name: Autograde
 
+# on:
+#   push:
+#   pull_request:
+
+# jobs:
+#   grade:
+#     runs-on: ubuntu-latest
+
+#     services:
+#       mysql:
+#         image: mysql:8.0
+#         env:
+#           MYSQL_ROOT_PASSWORD: root
+#         ports:
+#           - 3306:3306
+
+#     steps:
+#       - uses: actions/checkout@v4
+
+#       - name: Install Python
+#         uses: actions/setup-python@v5
+#         with:
+#           python-version: "3.11"
+
+#       - name: Install deps
+#         run: |
+#           pip install -r tests/requirements.txt
+
+#       - name: Wait for MySQL
+#         run: |
+#           until mysqladmin ping \
+#             -h127.0.0.1 \
+#             -uroot \
+#             -proot \
+#             --silent
+#           do
+#             sleep 2
+#           done
+
+#       - name: Run tests
+#         run: |
+#           pytest tests -v
+
+
+name: Autograde
 on:
   push:
   pull_request:
-
 jobs:
   grade:
     runs-on: ubuntu-latest
-
     services:
       mysql:
         image: mysql:8.0
@@ -15,19 +58,15 @@ jobs:
           MYSQL_ROOT_PASSWORD: root
         ports:
           - 3306:3306
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Install Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - name: Install deps
         run: |
           pip install -r tests/requirements.txt
-
       - name: Wait for MySQL
         run: |
           until mysqladmin ping \
@@ -38,7 +77,31 @@ jobs:
           do
             sleep 2
           done
-
+      # tests/lab3_answers.py holds the private EXPECTED_RESULTS for Lab 3
+      # and is intentionally NOT committed to the repo (see test_lab3.py's
+      # header docstring). It is reconstructed here, only inside this
+      # ephemeral runner, from a base64-encoded secret -- this keeps the
+      # answer key out of every student's forked repo while still letting
+      # grading run fully unattended on every push.
+      #
+      # ONE-TIME SETUP (instructor does this once, not per student):
+      #   1. base64 -w0 lab3_answers.py   (copy the output)
+      #   2. In this repo (or the GitHub Classroom organization, to cover
+      #      every student repo at once): Settings > Secrets and variables
+      #      > Actions > New secret named LAB3_ANSWERS_B64, paste the
+      #      base64 string as the value.
+      - name: Reconstruct private Lab 3 answer key
+        env:
+          LAB3_ANSWERS_B64: ${{ secrets.LAB3_ANSWERS_B64 }}
+        run: |
+          if [ -z "$LAB3_ANSWERS_B64" ]; then
+            echo "::error::LAB3_ANSWERS_B64 secret is not set. Add it under Settings > Secrets and variables > Actions (instructor-only, one-time setup)."
+            exit 1
+          fi
+          echo "$LAB3_ANSWERS_B64" | base64 -d > tests/lab3_answers.py
       - name: Run tests
         run: |
           pytest tests -v
+      - name: Clean up reconstructed answer key
+        if: always()
+        run: rm -f tests/lab3_answers.py
