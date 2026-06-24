@@ -1,9 +1,45 @@
 name: Autograde
+
+# Path filters mean: a push that only touches Lab 3 files triggers ONLY the
+# grade-lab3 job; a push that only touches Lab 0 files triggers ONLY
+# grade-lab0. A push touching files from both labs runs both jobs (they're
+# independent and run in parallel). A push touching neither (e.g. a README
+# edit) triggers neither job.
+#
+# Path detection uses dorny/paths-filter, which diffs across the FULL set of
+# commits in a push -- unlike GitHub's built-in github.event.head_commit,
+# which only reflects the single most recent commit and silently misses
+# changes from earlier commits in a multi-commit push.
 on:
   push:
   pull_request:
+
 jobs:
-  grade:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      lab0_changed: ${{ steps.filter.outputs.lab0 }}
+      lab3_changed: ${{ steps.filter.outputs.lab3 }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            lab0:
+              - 'tests/test_lab0.py'
+              - 'tests/requirements.txt'
+            lab3:
+              - 'tests/test_lab3.py'
+              - 'tests/schema.sql'
+              - 'tests/seed.sql'
+
+  # ==========================================================================
+  # LAB 0 -- only runs if tests/test_lab0.py (or requirements.txt) changed
+  # ==========================================================================
+  grade-lab0:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.lab0_changed == 'true'
     runs-on: ubuntu-latest
     services:
       mysql:
@@ -19,40 +55,57 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install deps
-        run: |
-          pip install -r tests/requirements.txt
+        run: pip install -r tests/requirements.txt
       - name: Wait for MySQL
         run: |
-          until mysqladmin ping \
-            -h127.0.0.1 \
-            -uroot \
-            -proot \
-            --silent
+          until mysqladmin ping -h127.0.0.1 -uroot -proot --silent
+          do
+            sleep 2
+          done
+      - name: Run Lab 0 tests only
+        run: pytest tests/test_lab0.py -v --tb=short
+
+  # ==========================================================================
+  # LAB 3 -- only runs if tests/test_lab3.py, schema.sql, or seed.sql changed
+  # ==========================================================================
+  grade-lab3:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.lab3_changed == 'true'
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install -r tests/requirements.txt
+      - name: Wait for MySQL
+        run: |
+          until mysqladmin ping -h127.0.0.1 -uroot -proot --silent
           do
             sleep 2
           done
       # tests/lab3_answers.py, tests/lab3_answers_shadow.py, and
       # tests/seed_shadow.sql together form the private half of the Lab 3
-      # autograder: the public expected-results dict, the SECOND hidden
-      # verification dataset's expected-results dict, and the second hidden
-      # dataset itself. None of the three are committed to the repo (see
-      # test_lab3.py's header docstring) -- every student query is run
-      # against BOTH the public seed.sql database and this hidden shadow
-      # database, and only earns credit if it matches both. This defeats a
-      # student who reads seed.sql or brute-forces pass/fail feedback and
-      # hardcodes literal IDs instead of writing genuine join/filter logic.
-      #
-      # All three files are bundled into one base64-encoded tar.gz secret
-      # so a single reconstruction step (and a single secret to manage)
-      # covers all of them.
+      # autograder (see test_lab3.py's header docstring for the full
+      # rationale). None are committed to the repo; they're reconstructed
+      # here, only inside this ephemeral runner, from a single bundled
+      # base64-encoded secret.
       #
       # ONE-TIME SETUP (instructor does this once, not per student):
       #   1. tar czf lab3_private_bundle.tar.gz lab3_answers.py lab3_answers_shadow.py seed_shadow.sql
       #   2. base64 -w0 lab3_private_bundle.tar.gz   (copy the output)
-      #   3. In this repo (or the GitHub Classroom organization, to cover
-      #      every student repo at once): Settings > Secrets and variables
-      #      > Actions > New secret named LAB3_PRIVATE_BUNDLE_B64, paste
-      #      the base64 string as the value.
+      #   3. Settings > Secrets and variables > Actions > New secret named
+      #      LAB3_PRIVATE_BUNDLE_B64 (set at the Classroom organization
+      #      level to cover every student repo at once).
       - name: Reconstruct private Lab 3 files
         env:
           LAB3_PRIVATE_BUNDLE_B64: ${{ secrets.LAB3_PRIVATE_BUNDLE_B64 }}
@@ -64,9 +117,8 @@ jobs:
           echo "$LAB3_PRIVATE_BUNDLE_B64" | base64 -d > /tmp/lab3_private_bundle.tar.gz
           tar xzf /tmp/lab3_private_bundle.tar.gz -C tests
           rm -f /tmp/lab3_private_bundle.tar.gz
-      - name: Run tests
-        run: |
-          pytest tests -v
+      - name: Run Lab 3 tests only
+        run: pytest tests/test_lab3.py -v --tb=short
       - name: Clean up reconstructed private files
         if: always()
         run: rm -f tests/lab3_answers.py tests/lab3_answers_shadow.py tests/seed_shadow.sql
