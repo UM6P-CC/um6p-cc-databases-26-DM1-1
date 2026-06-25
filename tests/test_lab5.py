@@ -21,12 +21,9 @@ public dataset.
 
 
 """
-
 import os
 import pymysql
 import pytest
-
-
 
 
 DB_NAME = "RLMS_LAB5"
@@ -86,6 +83,7 @@ def setup_database(admin_connection):
         cur.execute(f"USE {db_name}")
         _load_sql_file_into_db(cur, SCHEMA_FILE, "Lab 5 grading requires schema.sql to sit next to test_lab5.py.")
         _load_sql_file_into_db(cur, seed_file, "Lab 5 grading requires lab5_seed.sql and lab5_seed_shadow.sql to sit next to test_lab5.py.")
+    
     cur.close()
     yield
 
