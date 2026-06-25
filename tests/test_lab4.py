@@ -1,6 +1,60 @@
+"""
+Lab 4 Autograder -- Normalization and SQL Implementation (RLMS)
+================================================================================
+Course : Data Management -- UM6P, College of Computing
+Prof.  : Karima Echihabi
+Session: Fall 2026
+
+SCOPE
+-----
+This file grades ONLY the 20 SQL queries from the Lab 4 handout. The
+normalization analysis (BCNF validation, lossless-join / dependency-
+preservation checks) and the DDL/DML tasks (CREATE TABLE with constraints,
+ALTER TABLE, INSERT/UPDATE/DELETE) are NOT autogradable and must be graded
+by hand from the student's written submission and SQL scripts.
+
+ARCHITECTURE -- same dual-dataset design as Lab 3
+------------------------------------------------------------------------------
+Every student query runs against TWO independent databases:
+  - RLMS_LAB4        (schema.sql + lab4_seed.sql)        -- public dataset
+  - RLMS_LAB4_SHADOW (schema.sql + lab4_seed_shadow.sql)  -- hidden dataset
+    with a disjoint ID namespace (Y/J/M-prefixed instead of Z/K/N).
+A query only earns credit if it matches the expected result on BOTH. This
+defeats a student who hardcodes literal ID values observed from the public
+dataset (or from probing pass/fail CI feedback) instead of writing the
+actual join/filter/aggregation logic the question asks for.
+
+WHY DATES DON'T BREAK THE HARDCODED-ANSWERS APPROACH HERE
+------------------------------------------------------------------------------
+Lab 4's seed data is anchored to CURDATE() (see lab4_seed.sql's header),
+so "next 7 days" / "last 90 days" stay meaningful regardless of which real
+day grading runs. Because every date in the seed is a FIXED OFFSET from
+CURDATE() (not a fixed calendar date), the SET of rows that satisfy any
+date-filtered WHERE/HAVING clause never changes -- only Q16 ("return the
+next reservation date for each research user") puts a literal date value
+into its own SELECT list, and that is stored in lab4_answers.py /
+lab4_answers_shadow.py as a (PersonID, day_offset) pair rather than an
+absolute date string; this test recomputes CURDATE() + INTERVAL day_offset
+DAY at comparison time instead of comparing to a frozen date.
+
+TAMPER PROTECTION
+-----------------
+This file is covered by the same test_integrity_manifest.txt mechanism as
+every other lab's test file -- if you regenerate the manifest after any
+future edit to this file, students cannot alter it (e.g. to weaken an
+assertion or hardcode around the comparison) without the hash check
+catching it before any grading job runs.
+
+THE None-SKIPS-SAFELY RULE
+----------------------------
+If EXPECTED_RESULTS[n] or SHADOW_EXPECTED_RESULTS[n] is None, that test is
+SKIPPED rather than silently passed or failed.
+"""
+
 import os
 import pymysql
 import pytest
+
 
 # ============================================================================
 # CONFIG
@@ -76,8 +130,7 @@ def setup_database(admin_connection):
 
 
 @pytest.fixture
-def cursor(public_connection, setup_database): 
-    
+def cursor(public_connection, setup_database):
     cur = public_connection.cursor()
     yield cur
     cur.close()
@@ -263,7 +316,7 @@ def test_01_query_1(cursor, shadow_cursor):
     Select all persons ordered by FullName (Person has no separate first/last name columns).\n\n    NOTE: the autograder also separately checks that the result is\n    actually ORDERED by FullName ascending (see test_01_order_check below).
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT PersonID, FullName FROM Person ORDER BY FullName
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[1], SHADOW_EXPECTED_RESULTS[1], "Q1")
 
@@ -275,7 +328,7 @@ def test_02_query_2(cursor, shadow_cursor):
     List distinct research areas of laboratories.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT DISTINCT ResearchArea FROM Laboratory
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[2], SHADOW_EXPECTED_RESULTS[2], "Q2")
 
@@ -287,7 +340,7 @@ def test_03_query_3(cursor, shadow_cursor):
     Retrieve research users who supervise at least one laboratory.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT DISTINCT ru.PersonID FROM ResearchUser ru JOIN Laboratory l ON l.SupervisorID = ru.PersonID
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[3], SHADOW_EXPECTED_RESULTS[3], "Q3")
 
@@ -299,7 +352,7 @@ def test_04_query_4(cursor, shadow_cursor):
     Find all reservations scheduled within the next seven days.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT ReservationID FROM Reservation WHERE PlannedStartTime >= CURDATE() AND PlannedStartTime < CURDATE() + INTERVAL 7 DAY
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[4], SHADOW_EXPECTED_RESULTS[4], "Q4")
 
@@ -311,7 +364,7 @@ def test_05_query_5(cursor, shadow_cursor):
     Count the number of reservations per laboratory.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT eu.LabID, COUNT(*) FROM Reservation r JOIN EquipmentUnit eu ON r.SerialNumber = eu.SerialNumber GROUP BY eu.LabID
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[5], SHADOW_EXPECTED_RESULTS[5], "Q5")
 
@@ -323,7 +376,7 @@ def test_06_query_6(cursor, shadow_cursor):
     Compute the average purchase cost of equipment per laboratory (excluding any unit with a non-positive cost -- see Query 20).
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT LabID, ROUND(AVG(PurchaseCost),2) FROM EquipmentUnit WHERE PurchaseCost > 0 GROUP BY LabID
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[6], SHADOW_EXPECTED_RESULTS[6], "Q6")
 
@@ -335,7 +388,7 @@ def test_07_query_7(cursor, shadow_cursor):
     List laboratories that contain more than ten equipment units.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT LabID, COUNT(*) FROM EquipmentUnit GROUP BY LabID HAVING COUNT(*) > 10
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[7], SHADOW_EXPECTED_RESULTS[7], "Q7")
 
@@ -347,7 +400,7 @@ def test_08_query_8(cursor, shadow_cursor):
     Find all equipment belonging to the category 'Microscope' whose purchase cost is below 25000.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT eu.SerialNumber FROM EquipmentUnit eu JOIN EquipmentModel em ON eu.ModelID = em.ModelID WHERE em.Category = 'Microscope' AND eu.PurchaseCost < 25000
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[8], SHADOW_EXPECTED_RESULTS[8], "Q8")
 
@@ -359,7 +412,7 @@ def test_09_query_9(cursor, shadow_cursor):
     For each laboratory, list the top three most expensive equipment items.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT LabID, SerialNumber FROM (SELECT LabID, SerialNumber, PurchaseCost, ROW_NUMBER() OVER (PARTITION BY LabID ORDER BY PurchaseCost DESC) AS rn FROM EquipmentUnit) ranked WHERE rn <= 3
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[9], SHADOW_EXPECTED_RESULTS[9], "Q9")
 
@@ -371,7 +424,7 @@ def test_10_query_10(cursor, shadow_cursor):
     For each laboratory, return the number of reservations with status Approved, Pending, and Cancelled in a single result.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT eu.LabID, SUM(CASE WHEN r.Status='Approved' THEN 1 ELSE 0 END), SUM(CASE WHEN r.Status='Pending' THEN 1 ELSE 0 END), SUM(CASE WHEN r.Status='Cancelled' THEN 1 ELSE 0 END) FROM Reservation r JOIN EquipmentUnit eu ON r.SerialNumber = eu.SerialNumber GROUP BY eu.LabID
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[10], SHADOW_EXPECTED_RESULTS[10], "Q10")
 
@@ -383,7 +436,7 @@ def test_11_query_11(cursor, shadow_cursor):
     List research users who have no reservation in the next thirty days.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT ru.PersonID FROM ResearchUser ru WHERE ru.PersonID NOT IN (SELECT PersonID FROM Reservation WHERE PlannedStartTime >= CURDATE() AND PlannedStartTime < CURDATE() + INTERVAL 30 DAY)
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[11], SHADOW_EXPECTED_RESULTS[11], "Q11")
 
@@ -395,7 +448,7 @@ def test_12_query_12(cursor, shadow_cursor):
     For each research user, compute the total number of reservations and the percentage share of reservations in their laboratory (computed per lab they have reservations in).
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT ru.PersonID, eu.LabID, COUNT(*), ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM Reservation r2 JOIN EquipmentUnit eu2 ON r2.SerialNumber = eu2.SerialNumber WHERE eu2.LabID = eu.LabID),2) FROM Reservation r JOIN EquipmentUnit eu ON r.SerialNumber = eu.SerialNumber JOIN ResearchUser ru ON r.PersonID = ru.PersonID GROUP BY ru.PersonID, eu.LabID
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[12], SHADOW_EXPECTED_RESULTS[12], "Q12")
 
@@ -407,7 +460,7 @@ def test_13_query_13(cursor, shadow_cursor):
     Show all equipment units currently marked as UnderMaintenance and include the laboratory where each unit is located.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT eu.SerialNumber, eu.LabID FROM EquipmentUnit eu WHERE eu.CurrentStatus = 'UnderMaintenance'
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[13], SHADOW_EXPECTED_RESULTS[13], "Q13")
 
@@ -419,7 +472,7 @@ def test_14_query_14(cursor, shadow_cursor):
     Find laboratories that contain every equipment category in the equipment catalog.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT l.LabID FROM Laboratory l WHERE NOT EXISTS (SELECT em.Category FROM EquipmentModel em WHERE em.Category NOT IN (SELECT em2.Category FROM EquipmentUnit eu2 JOIN EquipmentModel em2 ON eu2.ModelID = em2.ModelID WHERE eu2.LabID = l.LabID))
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[14], SHADOW_EXPECTED_RESULTS[14], "Q14")
 
@@ -431,7 +484,7 @@ def test_15_query_15(cursor, shadow_cursor):
     For each laboratory and equipment category, return the average purchase cost and indicate whether it is above the overall average for that category.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT eu.LabID, em.Category, CASE WHEN AVG(eu.PurchaseCost) > (SELECT AVG(eu2.PurchaseCost) FROM EquipmentUnit eu2 JOIN EquipmentModel em2 ON eu2.ModelID = em2.ModelID WHERE em2.Category = em.Category) THEN 'Above' ELSE 'Below or Equal' END FROM EquipmentUnit eu JOIN EquipmentModel em ON eu.ModelID = em.ModelID GROUP BY eu.LabID, em.Category
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[15], SHADOW_EXPECTED_RESULTS[15], "Q15")
 
@@ -443,7 +496,7 @@ def test_16_query_16(cursor, shadow_cursor):
     Return the next reservation date for each research user.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT PersonID, MIN(PlannedStartTime) FROM Reservation WHERE PlannedStartTime >= CURDATE() GROUP BY PersonID
     """
     assert_matches_expected_q16(cursor, shadow_cursor, sql, EXPECTED_RESULTS[16], SHADOW_EXPECTED_RESULTS[16], "Q16")
 
@@ -455,7 +508,7 @@ def test_17_query_17(cursor, shadow_cursor):
     Among research users with at least two reservations, list those whose latest reservation was within the last fourteen days.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT PersonID FROM Reservation GROUP BY PersonID HAVING COUNT(*) >= 2 AND MAX(PlannedStartTime) >= CURDATE() - INTERVAL 14 DAY AND MAX(PlannedStartTime) < CURDATE()
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[17], SHADOW_EXPECTED_RESULTS[17], "Q17")
 
@@ -467,7 +520,7 @@ def test_18_query_18(cursor, shadow_cursor):
     For each building, rank laboratories by the number of approved reservations in the last ninety days.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT l.Building, eu.LabID, COUNT(*), RANK() OVER (PARTITION BY l.Building ORDER BY COUNT(*) DESC) FROM Reservation r JOIN EquipmentUnit eu ON r.SerialNumber = eu.SerialNumber JOIN Laboratory l ON eu.LabID = l.LabID WHERE r.Status = 'Approved' AND r.PlannedStartTime >= CURDATE() - INTERVAL 90 DAY AND r.PlannedStartTime < CURDATE() GROUP BY l.Building, eu.LabID
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[18], SHADOW_EXPECTED_RESULTS[18], "Q18")
 
@@ -479,7 +532,7 @@ def test_19_query_19(cursor, shadow_cursor):
     Within each building, return the equipment categories whose prices show a spread greater than thirty percent of the minimum (excluding any unit with a non-positive cost -- see Query 20).
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT l.Building, em.Category FROM Laboratory l JOIN EquipmentUnit eu ON eu.LabID = l.LabID JOIN EquipmentModel em ON em.ModelID = eu.ModelID WHERE eu.PurchaseCost > 0 GROUP BY l.Building, em.Category HAVING MAX(eu.PurchaseCost) > 1.3 * MIN(eu.PurchaseCost)
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[19], SHADOW_EXPECTED_RESULTS[19], "Q19")
 
@@ -491,7 +544,7 @@ def test_20_query_20(cursor, shadow_cursor):
     Data quality check: list equipment units with missing status, invalid acquisition dates, or non positive purchase cost.
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE
+    SELECT SerialNumber FROM EquipmentUnit WHERE CurrentStatus IS NULL OR AcquisitionDate IS NULL OR AcquisitionDate > CURDATE() OR PurchaseCost IS NULL OR PurchaseCost <= 0
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[20], SHADOW_EXPECTED_RESULTS[20], "Q20")
 
@@ -504,7 +557,7 @@ def test_01_order_check_fullname_ascending(cursor):
     some order the multiset comparison above would treat as equivalent).
     """
     sql = """
-    -- WRITE YOUR SQL QUERY HERE (same query as test_01)
+    SELECT PersonID, FullName FROM Person ORDER BY FullName
     """
     assert not _is_effectively_blank(sql), (
         "Q1 (order check): no SQL was written (only the placeholder "
