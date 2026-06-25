@@ -76,7 +76,8 @@ def setup_database(admin_connection):
 
 
 @pytest.fixture
-def cursor(public_connection, setup_database):
+def cursor(public_connection, setup_database): 
+    
     cur = public_connection.cursor()
     yield cur
     cur.close()
