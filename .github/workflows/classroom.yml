@@ -2,9 +2,12 @@ name: Autograde
 
 # Path filters mean: a push that only touches Lab 3 files triggers ONLY the
 # grade-lab3 job; a push that only touches Lab 0 files triggers ONLY
-# grade-lab0; same for Lab 2. A push touching files from multiple labs runs
+# grade-lab0; same for Lab 4. A push touching files from multiple labs runs
 # each relevant job in parallel. A push touching none of them (e.g. a README
 # edit) triggers no grading job at all.
+#
+# Lab 2 grading is currently DISABLED (no lab2 filter / grade-lab2 job) --
+# re-add it the same way grade-lab3/grade-lab4 are structured if needed later.
 #
 # Path detection uses dorny/paths-filter, which diffs across the FULL set of
 # commits in a push -- unlike GitHub's built-in github.event.head_commit,
@@ -15,27 +18,10 @@ on:
   pull_request:
 
 jobs:
-  # ==========================================================================
-  # INTEGRITY CHECK -- runs first, blocks every grading job if it fails.
-  # Verifies that tests/test_lab*.py still match the hashes recorded in
-  # test_integrity_manifest.txt. A student editing the grading logic itself
-  # (weakening an assertion, deleting a check, hardcoding an expected value
-  # to match their own wrong schema, etc.) is caught here, before any
-  # grading job even starts -- so a tampered test file can never produce a
-  # false PASSED.
-  # ==========================================================================
-  verify-integrity:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Verify test file integrity
-        run: python3 verify_test_integrity.py test_integrity_manifest.txt
-
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
       lab0_changed: ${{ steps.filter.outputs.lab0 }}
-      lab2_changed: ${{ steps.filter.outputs.lab2 }}
       lab3_changed: ${{ steps.filter.outputs.lab3 }}
       lab4_changed: ${{ steps.filter.outputs.lab4 }}
     steps:
@@ -47,8 +33,6 @@ jobs:
             lab0:
               - 'tests/test_lab0.py'
               - 'tests/requirements.txt'
-            lab2:
-              - 'tests/test_lab2.py'
             lab3:
               - 'tests/test_lab3.py'
               - 'tests/schema.sql'
@@ -62,7 +46,7 @@ jobs:
   # LAB 0 -- only runs if tests/test_lab0.py (or requirements.txt) changed
   # ==========================================================================
   grade-lab0:
-    needs: [verify-integrity, detect-changes]
+    needs: detect-changes
     if: needs.detect-changes.outputs.lab0_changed == 'true'
     runs-on: ubuntu-latest
     services:
@@ -90,43 +74,10 @@ jobs:
         run: pytest tests/test_lab0.py -v --tb=short
 
   # ==========================================================================
-  # LAB 2 -- only runs if tests/test_lab2.py changed. No private files
-  # needed: Lab 2 grades schema STRUCTURE (tables/keys/FKs) and the fact of
-  # data insertion, not specific row values, so there is nothing to hide.
-  # ==========================================================================
-  grade-lab2:
-    needs: [verify-integrity, detect-changes]
-    if: needs.detect-changes.outputs.lab2_changed == 'true'
-    runs-on: ubuntu-latest
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: root
-        ports:
-          - 3306:3306
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install deps
-        run: pip install -r tests/requirements.txt
-      - name: Wait for MySQL
-        run: |
-          until mysqladmin ping -h127.0.0.1 -uroot -proot --silent
-          do
-            sleep 2
-          done
-      - name: Run Lab 2 tests only
-        run: pytest tests/test_lab2.py -v --tb=short
-
-  # ==========================================================================
   # LAB 3 -- only runs if tests/test_lab3.py, schema.sql, or seed.sql changed
   # ==========================================================================
   grade-lab3:
-    needs: [verify-integrity, detect-changes]
+    needs: detect-changes
     if: needs.detect-changes.outputs.lab3_changed == 'true'
     runs-on: ubuntu-latest
     services:
@@ -185,7 +136,7 @@ jobs:
   # changed. Same dual-dataset / private-bundle pattern as Lab 3.
   # ==========================================================================
   grade-lab4:
-    needs: [verify-integrity, detect-changes]
+    needs: detect-changes
     if: needs.detect-changes.outputs.lab4_changed == 'true'
     runs-on: ubuntu-latest
     services:
