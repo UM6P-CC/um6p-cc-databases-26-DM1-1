@@ -2,9 +2,9 @@ name: Autograde
 
 # Path filters mean: a push that only touches Lab 3 files triggers ONLY the
 # grade-lab3 job; a push that only touches Lab 0 files triggers ONLY
-# grade-lab0. A push touching files from both labs runs both jobs (they're
-# independent and run in parallel). A push touching neither (e.g. a README
-# edit) triggers neither job.
+# grade-lab0; same for Lab 2. A push touching files from multiple labs runs
+# each relevant job in parallel. A push touching none of them (e.g. a README
+# edit) triggers no grading job at all.
 #
 # Path detection uses dorny/paths-filter, which diffs across the FULL set of
 # commits in a push -- unlike GitHub's built-in github.event.head_commit,
@@ -15,11 +15,29 @@ on:
   pull_request:
 
 jobs:
+  # ==========================================================================
+  # INTEGRITY CHECK -- runs first, blocks every grading job if it fails.
+  # Verifies that tests/test_lab*.py still match the hashes recorded in
+  # test_integrity_manifest.txt. A student editing the grading logic itself
+  # (weakening an assertion, deleting a check, hardcoding an expected value
+  # to match their own wrong schema, etc.) is caught here, before any
+  # grading job even starts -- so a tampered test file can never produce a
+  # false PASSED.
+  # ==========================================================================
+  verify-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify test file integrity
+        run: python3 verify_test_integrity.py test_integrity_manifest.txt
+
   detect-changes:
     runs-on: ubuntu-latest
     outputs:
       lab0_changed: ${{ steps.filter.outputs.lab0 }}
+      lab2_changed: ${{ steps.filter.outputs.lab2 }}
       lab3_changed: ${{ steps.filter.outputs.lab3 }}
+      lab4_changed: ${{ steps.filter.outputs.lab4 }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -29,16 +47,22 @@ jobs:
             lab0:
               - 'tests/test_lab0.py'
               - 'tests/requirements.txt'
+            lab2:
+              - 'tests/test_lab2.py'
             lab3:
               - 'tests/test_lab3.py'
               - 'tests/schema.sql'
               - 'tests/seed.sql'
+            lab4:
+              - 'tests/test_lab4.py'
+              - 'tests/schema.sql'
+              - 'tests/lab4_seed.sql'
 
   # ==========================================================================
   # LAB 0 -- only runs if tests/test_lab0.py (or requirements.txt) changed
   # ==========================================================================
   grade-lab0:
-    needs: detect-changes
+    needs: [verify-integrity, detect-changes]
     if: needs.detect-changes.outputs.lab0_changed == 'true'
     runs-on: ubuntu-latest
     services:
@@ -66,10 +90,43 @@ jobs:
         run: pytest tests/test_lab0.py -v --tb=short
 
   # ==========================================================================
+  # LAB 2 -- only runs if tests/test_lab2.py changed. No private files
+  # needed: Lab 2 grades schema STRUCTURE (tables/keys/FKs) and the fact of
+  # data insertion, not specific row values, so there is nothing to hide.
+  # ==========================================================================
+  grade-lab2:
+    needs: [verify-integrity, detect-changes]
+    if: needs.detect-changes.outputs.lab2_changed == 'true'
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install -r tests/requirements.txt
+      - name: Wait for MySQL
+        run: |
+          until mysqladmin ping -h127.0.0.1 -uroot -proot --silent
+          do
+            sleep 2
+          done
+      - name: Run Lab 2 tests only
+        run: pytest tests/test_lab2.py -v --tb=short
+
+  # ==========================================================================
   # LAB 3 -- only runs if tests/test_lab3.py, schema.sql, or seed.sql changed
   # ==========================================================================
   grade-lab3:
-    needs: detect-changes
+    needs: [verify-integrity, detect-changes]
     if: needs.detect-changes.outputs.lab3_changed == 'true'
     runs-on: ubuntu-latest
     services:
@@ -122,3 +179,61 @@ jobs:
       - name: Clean up reconstructed private files
         if: always()
         run: rm -f tests/lab3_answers.py tests/lab3_answers_shadow.py tests/seed_shadow.sql
+
+  # ==========================================================================
+  # LAB 4 -- only runs if tests/test_lab4.py, schema.sql, or lab4_seed.sql
+  # changed. Same dual-dataset / private-bundle pattern as Lab 3.
+  # ==========================================================================
+  grade-lab4:
+    needs: [verify-integrity, detect-changes]
+    if: needs.detect-changes.outputs.lab4_changed == 'true'
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deps
+        run: pip install -r tests/requirements.txt
+      - name: Wait for MySQL
+        run: |
+          until mysqladmin ping -h127.0.0.1 -uroot -proot --silent
+          do
+            sleep 2
+          done
+      # tests/lab4_answers.py, tests/lab4_answers_shadow.py, and
+      # tests/lab4_seed_shadow.sql together form the private half of the
+      # Lab 4 autograder (see test_lab4.py's header docstring). None are
+      # committed to the repo; they're reconstructed here, only inside
+      # this ephemeral runner, from a single bundled base64-encoded secret.
+      #
+      # ONE-TIME SETUP (instructor does this once, not per student):
+      #   1. tar czf lab4_private_bundle.tar.gz lab4_answers.py lab4_answers_shadow.py lab4_seed_shadow.sql
+      #   2. base64 -w0 lab4_private_bundle.tar.gz   (copy the output)
+      #   3. Settings > Secrets and variables > Actions > New secret named
+      #      LAB4_PRIVATE_BUNDLE_B64 (set at the Classroom organization
+      #      level to cover every student repo at once).
+      - name: Reconstruct private Lab 4 files
+        env:
+          LAB4_PRIVATE_BUNDLE_B64: ${{ secrets.LAB4_PRIVATE_BUNDLE_B64 }}
+        run: |
+          if [ -z "$LAB4_PRIVATE_BUNDLE_B64" ]; then
+            echo "::error::LAB4_PRIVATE_BUNDLE_B64 secret is not set. Add it under Settings > Secrets and variables > Actions (instructor-only, one-time setup)."
+            exit 1
+          fi
+          echo "$LAB4_PRIVATE_BUNDLE_B64" | base64 -d > /tmp/lab4_private_bundle.tar.gz
+          tar xzf /tmp/lab4_private_bundle.tar.gz -C tests
+          rm -f /tmp/lab4_private_bundle.tar.gz
+      - name: Run Lab 4 tests only
+        run: pytest tests/test_lab4.py -v --tb=short
+      - name: Clean up reconstructed private files
+        if: always()
+        run: rm -f tests/lab4_answers.py tests/lab4_answers_shadow.py tests/lab4_seed_shadow.sql
