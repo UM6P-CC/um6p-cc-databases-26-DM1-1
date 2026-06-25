@@ -187,4 +187,62 @@ jobs:
         run: pytest tests/test_lab4.py -v --tb=short
       - name: Clean up reconstructed private files
         if: always()
-        run: rm -f tests/lab4_answers.py tests/lab4_answers_shadow.py tests/lab4_seed_shadow.sql
+        run: rm -f tests/lab4_answers.py tests/lab4_answers_shadow.py tests/lab4_seed_shadow.
+    # ==========================================================================
+  # LAB 5 -- only runs if tests/test_lab5.py, schema.sql, or lab5_seed.sql
+  # changed. Same dual-dataset / private-bundle pattern as Labs 3 and 4.
+  # ==========================================================================
+  grade-lab5:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.lab5_changed == 'true'
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: pip install -r tests/requirements.txt
+
+      - name: Wait for MySQL
+        run: |
+          until mysqladmin ping -h127.0.0.1 -uroot -proot --silent
+          do
+            sleep 2
+          done
+
+
+      - name: Reconstruct private Lab 5 files
+        env:
+          LAB5_PRIVATE_BUNDLE_B64: ${{ secrets.LAB5_PRIVATE_BUNDLE_B64 }}
+        run: |
+          if [ -z "$LAB5_PRIVATE_BUNDLE_B64" ]; then
+            echo "::error::LAB5_PRIVATE_BUNDLE_B64 secret is not set."
+            exit 1
+          fi
+
+          echo "$LAB5_PRIVATE_BUNDLE_B64" | base64 -d > /tmp/lab5_private_bundle.tar.gz
+          tar xzf /tmp/lab5_private_bundle.tar.gz -C tests
+          rm -f /tmp/lab5_private_bundle.tar.gz
+
+      - name: Run Lab 5 tests only
+        run: pytest tests/test_lab5.py -v --tb=short
+
+      - name: Clean up reconstructed private files
+        if: always()
+        run: |
+          rm -f tests/lab5_answers.py \
+                tests/lab5_answers_shadow.py \
+                tests/lab5_seed_shadow.sql
