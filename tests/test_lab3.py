@@ -1,9 +1,72 @@
+"""
+Lab 3 Autograder -- SOLUTION FILE (instructor reference, NOT for students)
+================================================================================
+Course : Data Management -- UM6P, College of Computing
+Prof.  : Karima Echihabi
+Session: Fall 2026
+
+!!! THIS FILE IS A CANONICAL-ANSWER REFERENCE, NOT THE STUDENT TEMPLATE !!!
+------------------------------------------------------------------------------
+Every "-- WRITE YOUR SQL HERE" slot in the blank test_lab3.py has been
+filled in here with correct, verified SQL for all 15 Lab 3 Part 1 queries.
+Running this file with pytest should produce 15/15 PASSED against BOTH the
+public and shadow datasets, and is a useful sanity check that schema.sql,
+seed.sql, seed_shadow.sql, lab3_answers.py, and lab3_answers_shadow.py are
+all mutually consistent.
+
+DO NOT distribute this file to students or commit it to the GitHub Classroom
+template repository.
+
+DUAL-DATABASE DESIGN (anti-hardcoding defense)
+------------------------------------------------
+Each test runs the same SQL against TWO independent databases:
+  - RLMS_LAB3        (schema.sql + seed.sql)        -- the "public" dataset
+  - RLMS_LAB3_SHADOW (schema.sql + seed_shadow.sql)  -- a second, hidden
+                                                         dataset with a
+                                                         disjoint ID namespace
+A query only earns credit if it matches the expected result on BOTH. This
+defeats a student who reads seed.sql (or brute-forces pass/fail feedback)
+and hardcodes literal ID values instead of writing genuine join/filter
+logic: such a query passes the public check by construction, but fails
+immediately against the shadow dataset, whose IDs share almost nothing
+with the public dataset (two narrow exceptions -- the lab literally named
+'BioLab-A' and the lab whose ID is the literal 'L0002' -- exist only because
+Q9 and Q6's question text hardcode those literals themselves).
+
+Every query below was verified, in this exact form, to produce matching
+results against both datasets before being committed here.
+
+SCOPE
+-----
+This file grades ONLY Part 1 of Lab 3: the 15 SQL queries written against the
+RLMS schema. The Relational Algebra expressions and the functional-dependency
+list (Part 2) are NOT autogradable and must be graded by hand.
+
+FILE LAYOUT
+------------
+  schema.sql              -- DDL for the 19 RLMS relations
+  seed.sql                -- public seed dataset
+  seed_shadow.sql          -- hidden second seed dataset (anti-hardcoding)
+  lab3_answers.py          -- EXPECTED_RESULTS for seed.sql (instructor-only)
+  lab3_answers_shadow.py   -- EXPECTED_RESULTS for seed_shadow.sql (instructor-only)
+  This file                -- instructor-only solved reference, never given to students
+
+THE None-SKIPS-SAFELY RULE
+----------------------------
+If EXPECTED_RESULTS[n] or SHADOW_EXPECTED_RESULTS[n] is None, that test is
+SKIPPED rather than silently passed or failed. (Not expected to trigger in
+this file, since every query below has a real answer in both datasets, but
+kept identical to the student harness for consistency.)
+"""
+
 import os
 import pymysql
 import pytest
 
 
+# ============================================================================
 # CONFIG
+# ============================================================================
 DB_NAME = "RLMS_LAB3"
 SHADOW_DB_NAME = "RLMS_LAB3_SHADOW"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -12,38 +75,15 @@ SEED_FILE = os.path.join(HERE, "seed.sql")
 SHADOW_SEED_FILE = os.path.join(HERE, "seed_shadow.sql")
 
 
+# ============================================================================
+# FIXTURES (same style as the Lab 0 test file)
+# ============================================================================
 @pytest.fixture(scope="session")
-def admin_connection():
+def connection():
     conn = pymysql.connect(
         host="127.0.0.1",
         user="root",
         password="root",
-        autocommit=True,
-    )
-    yield conn
-    conn.close()
-
-
-@pytest.fixture(scope="session")
-def public_connection():
-    conn = pymysql.connect(
-        host="127.0.0.1",
-        user="root",
-        password="root",
-        database=DB_NAME,
-        autocommit=True,
-    )
-    yield conn
-    conn.close()
-
-
-@pytest.fixture(scope="session")
-def shadow_connection():
-    conn = pymysql.connect(
-        host="127.0.0.1",
-        user="root",
-        password="root",
-        database=SHADOW_DB_NAME,
         autocommit=True,
     )
     yield conn
@@ -51,6 +91,12 @@ def shadow_connection():
 
 
 def _load_sql_file_into_db(cur, path, required_for_msg):
+    """
+    Reads `path`, strips '--' comments line-by-line (must happen BEFORE
+    splitting on ';' or multi-line comment blocks get swallowed into one
+    malformed "statement"), then executes each non-empty statement against
+    the cursor's currently-selected database.
+    """
     if not os.path.exists(path):
         raise FileNotFoundError(
             f"Required file not found: {path}\n{required_for_msg}"
@@ -75,7 +121,7 @@ def _load_sql_file_into_db(cur, path, required_for_msg):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_database(admin_connection):
+def setup_database(connection):
     """
     Runs once per test session: builds TWO independent databases --
     RLMS_LAB3 (from schema.sql + seed.sql, the public dataset) and
@@ -85,7 +131,7 @@ def setup_database(admin_connection):
     literal values from the public dataset will fail against the shadow
     dataset, while a genuinely correct, general-purpose query passes both.
     """
-    cur = admin_connection.cursor()
+    cur = connection.cursor()
 
     for db_name, seed_file in ((DB_NAME, SEED_FILE), (SHADOW_DB_NAME, SHADOW_SEED_FILE)):
         cur.execute(f"DROP DATABASE IF EXISTS {db_name}")
@@ -107,20 +153,24 @@ def setup_database(admin_connection):
 
 
 @pytest.fixture
-def cursor(public_connection, setup_database):
-    cur = public_connection.cursor()
+def cursor(connection):
+    cur = connection.cursor()
+    cur.execute(f"USE {DB_NAME}")
     yield cur
     cur.close()
 
 
 @pytest.fixture
-def shadow_cursor(shadow_connection, setup_database):
-    cur = shadow_connection.cursor()
+def shadow_cursor(connection):
+    cur = connection.cursor()
+    cur.execute(f"USE {SHADOW_DB_NAME}")
     yield cur
     cur.close()
 
 
+# ============================================================================
 # COMPARISON HELPER
+# ============================================================================
 def normalize(rows):
     """Order-insensitive comparison: sorted tuple multiset."""
     return sorted(tuple(row) for row in rows)
@@ -130,20 +180,24 @@ def assert_matches_expected(cursor, shadow_cursor, sql, expected, shadow_expecte
     """
     Runs `sql` against BOTH the public dataset (via `cursor`) and the
     shadow dataset (via `shadow_cursor`), comparing each to its own
-    expected result as an order-insensitive multiset..
+    expected result as an order-insensitive multiset. Credit requires a
+    match on BOTH -- a query that hardcodes literal values observed from
+    the public dataset (e.g. by reading seed.sql or by brute-forcing
+    pass/fail feedback) will reliably fail the shadow check, since none of
+    seed_shadow.sql's IDs overlap with seed.sql's.
 
+    If `expected` or `shadow_expected` is None, the test is SKIPPED rather
+    than silently passed or failed -- a missing answer-key entry must never
+    look like a correct submission.
 
-    FAILURE MESSAGE ASYMMETRY (deliberate):
-      - Public dataset mismatch -> shows the literal expected vs. actual
-        rows. seed.sql is already visible to the student (it's committed to
-        their repo), the detail helps them debug.
-      - Shadow dataset mismatch -> shows ROW COUNTS ONLY, never literal
-        values.
+    Failure messages deliberately report only ROW COUNTS, never the literal
+    expected or actual values: printing literal rows in a CI log would leak
+    the answer key the first time a student's query happens to be wrong.
     """
     if expected is None or shadow_expected is None:
         pytest.skip(
             f"{query_label}: no expected-results entry filled in yet for "
-            f"one or both datasets, skipping rather than risking a false pass."
+            f"one or both datasets -- skipping rather than risking a false pass."
         )
 
     cursor.execute(sql)
@@ -160,23 +214,64 @@ def assert_matches_expected(cursor, shadow_cursor, sql, expected, shadow_expecte
     if public_ok and shadow_ok:
         return
 
+    # Build a count-only diagnostic -- no literal row values, on either side.
     details = []
     if not public_ok:
         details.append(
-            f"public dataset result mismatch:\n"
-            f"    Expected ({len(expected_rows)} row(s)): {expected_rows}\n"
-            f"    Got      ({len(actual_rows)} row(s)): {actual_rows}"
+            f"public dataset: expected {len(expected_rows)} row(s), "
+            f"got {len(actual_rows)} row(s)"
         )
     if not shadow_ok:
         details.append(
-            f"hidden verification dataset result mismatch: "
-            f"expected {len(shadow_expected_rows)} row(s), "
-            f"got {len(shadow_actual_rows)} row(s) "
+            f"shadow dataset: expected {len(shadow_expected_rows)} row(s), "
+            f"got {len(shadow_actual_rows)} row(s)"
         )
+        if public_ok:
+            details.append(
+                "(this query matched the public dataset but NOT the shadow "
+                "dataset -- if your SQL hardcodes specific ID values instead "
+                "of expressing the join/filter logic the question asks for, "
+                "this is the expected failure mode)"
+            )
 
     pytest.fail(f"{query_label} result mismatch:\n  " + "\n  ".join(details))
 
 
+# ============================================================================
+# EXPECTED RESULTS (public + shadow)
+# Imported from lab3_answers.py and lab3_answers_shadow.py, neither of which
+# is distributed to students (see module docstring above). If either file is
+# missing, this import fails loudly at collection time rather than silently
+# grading against no expected values.
+# ============================================================================
+try:
+    from lab3_answers import EXPECTED_RESULTS
+except ImportError as exc:
+    raise ImportError(
+        "lab3_answers.py not found. This file holds the private expected "
+        "results for Lab 3 (public dataset) and is intentionally NOT "
+        "included in the student-facing repository. If you are the "
+        "instructor running grading, place lab3_answers.py next to "
+        "test_lab3.py (or anywhere on the Python path) before running "
+        "pytest."
+    ) from exc
+
+try:
+    from lab3_answers_shadow import EXPECTED_RESULTS as SHADOW_EXPECTED_RESULTS
+except ImportError as exc:
+    raise ImportError(
+        "lab3_answers_shadow.py not found. This file holds the private "
+        "expected results for Lab 3's SECOND, hidden verification dataset "
+        "and is intentionally NOT included in the student-facing "
+        "repository. If you are the instructor running grading, place "
+        "lab3_answers_shadow.py next to test_lab3.py (or anywhere on the "
+        "Python path) before running pytest."
+    ) from exc
+
+
+# ============================================================================
+# TESTS -- one per Lab 3 Part 1 query, docstring lifted from the Lab 3 PDF
+# ============================================================================
 def test_01_research_users_with_reservation(cursor, shadow_cursor):
     """
     Query 1
@@ -190,6 +285,7 @@ def test_01_research_users_with_reservation(cursor, shadow_cursor):
     JOIN Reservation r ON r.PersonID = p.PersonID
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[1], SHADOW_EXPECTED_RESULTS[1], "Q1")
+
 
 def test_02_users_attached_or_leading_project(cursor, shadow_cursor):
     """
