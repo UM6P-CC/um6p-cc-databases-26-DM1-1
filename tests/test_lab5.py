@@ -71,8 +71,6 @@ def cursor(public_connection, setup_database):
     cur.close()
 
 
-
-
 @pytest.fixture
 def shadow_cursor(shadow_connection, setup_database):
     cur = shadow_connection.cursor()
@@ -94,6 +92,20 @@ def _is_effectively_blank(sql):
 
 
 def _split_trigger_statements(sql):
+    """
+    Splits a student's trigger SQL into individual executable statements.
+    Trigger bodies contain semicolons INSIDE BEGIN...END blocks (e.g. after
+    each IF...END IF;), so naively splitting on ';' shreds a single
+    CREATE TRIGGER into invalid fragments. Students are expected to follow
+    the lab handout's MySQL client convention of wrapping multi-statement
+    trigger bodies in `DELIMITER //` ... `END //` ... `DELIMITER ;` --
+    but DELIMITER is a CLIENT command, not real SQL, and pymysql sends
+    one statement at a time with no delimiter ambiguity to begin with, so
+    this function strips DELIMITER lines and splits on '//' instead of ';'
+    when '//' is present, falling back to ';'-splitting otherwise (so a
+    student who *didn't* use DELIMITER, e.g. a single-statement trigger,
+    still works).
+    """
     if "DELIMITER" in sql.upper() or "//" in sql:
         # Strip DELIMITER lines entirely, then split remaining content on //
         lines = [l for l in sql.split("\n") if not l.strip().upper().startswith("DELIMITER")]
@@ -105,6 +117,8 @@ def _split_trigger_statements(sql):
 
 
 def assert_view_matches_expected(cursor, shadow_cursor, view_sql, view_name, expected, shadow_expected, label):
+    """Creates the view from `view_sql`, queries it on both datasets, and
+    compares to hardcoded expected results (order-insensitive multiset)."""
     if expected is None or shadow_expected is None:
         pytest.skip(f"{label}: no expected-results entry filled in yet -- skipping.")
 
@@ -153,7 +167,9 @@ def assert_view_matches_expected(cursor, shadow_cursor, view_sql, view_name, exp
 def assert_view_matches_expected_with_offset(cursor, shadow_cursor, view_sql, view_name,
                                               expected_with_offset, shadow_expected_with_offset,
                                               date_col_index, label):
-
+    """Same as assert_view_matches_expected, but one column (at
+    `date_col_index`) is a DATE/DATETIME that must be compared as a
+    CURDATE()-relative day-offset rather than a frozen absolute value."""
     if expected_with_offset is None or shadow_expected_with_offset is None:
         pytest.skip(f"{label}: no expected-results entry filled in yet -- skipping.")
 
@@ -219,7 +235,9 @@ def assert_view_matches_expected_with_offset(cursor, shadow_cursor, view_sql, vi
 def assert_statement_rejected(cursor, sql, label, expected_error_substring=None):
     """Asserts that executing `sql` raises a MySQL error (e.g. from a
     SIGNAL in a trigger). If `expected_error_substring` is given, also
-    checks the error message contains it (case-insensitive) """
+    checks the error message contains it (case-insensitive) -- this is
+    intentionally a SUBSTRING check, not exact-match, since the lab only
+    asks for "a clear error message", not one specific wording."""
     import pymysql.err
     try:
         cursor.execute(sql)
@@ -240,7 +258,8 @@ def assert_statement_rejected(cursor, sql, label, expected_error_substring=None)
 
 def assert_statement_succeeds(cursor, sql, label):
     """Asserts that executing `sql` does NOT raise -- i.e. the trigger
-    correctly allows a valid statement through """
+    correctly allows a valid statement through (catches an overly broad
+    trigger that rejects everything)."""
     import pymysql.err
     try:
         cursor.execute(sql)
@@ -254,7 +273,12 @@ def assert_statement_succeeds(cursor, sql, label):
 def _assert_trigger_exists(cursor, table_name, event, timing, label):
     """Confirms AT LEAST ONE trigger exists on `table_name` for the given
     event/timing (e.g. ('Reservation', 'INSERT', 'BEFORE')). Checks by
-    table+event+timing, not by a specific trigger name."""
+    table+event+timing, not by a specific trigger name, since students
+    choose their own trigger names -- only the lab's required BEHAVIOR is
+    specified, not naming. Used by the 'must still succeed' tests to fail
+    loudly if no trigger was ever created, since otherwise a blank
+    submission's INSERT/UPDATE/DELETE would trivially 'succeed' (nothing
+    is there to reject it) and the test would falsely pass."""
     cursor.execute(
         "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TRIGGERS "
         "WHERE TRIGGER_SCHEMA = DATABASE() AND EVENT_OBJECT_TABLE = %s "
@@ -278,6 +302,8 @@ try:
 except ImportError as exc:
     raise ImportError(
         "lab5_answers.py not found. This file holds the private expected "
+        "view results for Lab 5 (public dataset) and is intentionally NOT "
+        "included in the student-facing repository."
     ) from exc
 
 try:
@@ -285,6 +311,7 @@ try:
 except ImportError as exc:
     raise ImportError(
         "lab5_answers_shadow.py not found. This file holds the private "
+        "expected view results for Lab 5's hidden verification dataset."
     ) from exc
 
 
@@ -448,8 +475,11 @@ def test_05_trigger_no_double_booking_insert(cursor):
     with a clear error message.
 
     This test provokes the trigger with a new reservation on WN00001 that
-    overlaps an existing Approved reservation (WR0001, 2026-06-28
-    00:00-02:00) -- this INSERT must be rejected.
+    overlaps an existing Approved reservation (WR0001, which this seed
+    defines as CURDATE() + 3 days, 00:00-02:00) -- this INSERT must be
+    rejected. The overlap window below is expressed the same way (relative
+    to CURDATE()), so this test stays correct regardless of which real
+    calendar day it runs on.
     """
     trigger_sql = """
 DELIMITER //
@@ -504,7 +534,9 @@ DELIMITER
             (ReservationID, SubmissionTimestamp, PlannedStartTime, PlannedEndTime,
              Purpose, Status, PersonID, SerialNumber, ProjectCode, ApprovedBy)
         VALUES
-            ('WRTST1', NOW(), '2026-06-28 01:00:00', '2026-06-28 03:00:00',
+            ('WRTST1', NOW(),
+             CURDATE() + INTERVAL 3 DAY + INTERVAL 1 HOUR,
+             CURDATE() + INTERVAL 3 DAY + INTERVAL 3 HOUR,
              'Overlap test', 'Approved', 'W00001', 'WN00001', NULL, NULL)
     """
     assert_statement_rejected(cursor, overlap_insert, "Trigger1-insert", "double")
@@ -516,13 +548,13 @@ def test_06_trigger_no_double_booking_update(cursor):
 
     Same rule as Trigger 1a, but provoked via an UPDATE that moves an
     existing reservation (WR0011, currently on WN00002) onto WN00001's
-    existing Approved time slot (2026-06-28 00:00-02:00, from WR0001).
+    existing Approved time slot (WR0001: CURDATE() + 3 days, 00:00-02:00).
     """
     overlap_update = """
         UPDATE Reservation
         SET SerialNumber = 'WN00001',
-            PlannedStartTime = '2026-06-28 00:30:00',
-            PlannedEndTime = '2026-06-28 01:30:00',
+            PlannedStartTime = CURDATE() + INTERVAL 3 DAY + INTERVAL 30 MINUTE,
+            PlannedEndTime = CURDATE() + INTERVAL 3 DAY + INTERVAL 90 MINUTE,
             Status = 'Approved'
         WHERE ReservationID = 'WR0011'
     """
@@ -561,6 +593,7 @@ def test_08_trigger_maintenance_sets_undermaintenance(cursor):
     maintenance record, the corresponding EquipmentUnit.CurrentStatus
     becomes 'UnderMaintenance'.
 
+    Provoked on WN00004 (currently Operational, per lab5_seed.sql).
     """
     trigger_sql = """
 DELIMITER //
@@ -624,9 +657,11 @@ def test_09_trigger_maintenance_outcome_sets_operational(cursor):
     'Operational'
 
     Create a trigger on Maintenance such that after updating a
-    maintenance record to set a non-null Outcome ,
+    maintenance record to set a non-null Outcome (the job is finished),
     the corresponding EquipmentUnit.CurrentStatus becomes 'Operational'.
 
+    Continues from test_08: WN00004 is now UnderMaintenance with an open
+    Maintenance record (WTTST1, Outcome still NULL).
     """
     _assert_trigger_exists(cursor, "Maintenance", "UPDATE", "AFTER", "Trigger2-update")
     cursor.execute("""
