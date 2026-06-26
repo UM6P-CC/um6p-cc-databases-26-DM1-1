@@ -1,18 +1,6 @@
 name: Autograde
 
-# Path filters mean: a push that only touches Lab 3 files triggers ONLY the
-# grade-lab3 job; a push that only touches Lab 0 files triggers ONLY
-# grade-lab0; same for Lab 4 and Lab 5. A push touching files from multiple
-# labs runs each relevant job in parallel. A push touching none of them
-# (e.g. a README edit) triggers no grading job at all.
-#
-# Lab 2 grading is currently DISABLED (no lab2 filter / grade-lab2 job) --
-# re-add it the same way grade-lab3/grade-lab4 are structured if needed later.
-#
-# Path detection uses dorny/paths-filter, which diffs across the FULL set of
-# commits in a push -- unlike GitHub's built-in github.event.head_commit,
-# which only reflects the single most recent commit and silently misses
-# changes from earlier commits in a multi-commit push.
+
 on:
   push:
   pull_request:
@@ -47,9 +35,7 @@ jobs:
               - 'tests/schema.sql'
               - 'tests/lab5_seed.sql'
 
-  # ==========================================================================
-  # LAB 0 -- only runs if tests/test_lab0.py (or requirements.txt) changed
-  # ==========================================================================
+
   grade-lab0:
     needs: detect-changes
     if: needs.detect-changes.outputs.lab0_changed == 'true'
@@ -78,9 +64,7 @@ jobs:
       - name: Run Lab 0 tests only
         run: pytest tests/test_lab0.py -v --tb=short
 
-  # ==========================================================================
-  # LAB 3 -- only runs if tests/test_lab3.py, schema.sql, or seed.sql changed
-  # ==========================================================================
+
   grade-lab3:
     needs: detect-changes
     if: needs.detect-changes.outputs.lab3_changed == 'true'
@@ -106,19 +90,7 @@ jobs:
           do
             sleep 2
           done
-      # tests/lab3_answers.py, tests/lab3_answers_shadow.py, and
-      # tests/seed_shadow.sql together form the private half of the Lab 3
-      # autograder (see test_lab3.py's header docstring for the full
-      # rationale). None are committed to the repo; they're reconstructed
-      # here, only inside this ephemeral runner, from a single bundled
-      # base64-encoded secret.
-      #
-      # ONE-TIME SETUP (instructor does this once, not per student):
-      #   1. tar czf lab3_private_bundle.tar.gz lab3_answers.py lab3_answers_shadow.py seed_shadow.sql
-      #   2. base64 -w0 lab3_private_bundle.tar.gz   (copy the output)
-      #   3. Settings > Secrets and variables > Actions > New secret named
-      #      LAB3_PRIVATE_BUNDLE_B64 (set at the Classroom organization
-      #      level to cover every student repo at once).
+
       - name: Reconstruct private Lab 3 files
         env:
           LAB3_PRIVATE_BUNDLE_B64: ${{ secrets.LAB3_PRIVATE_BUNDLE_B64 }}
@@ -136,10 +108,6 @@ jobs:
         if: always()
         run: rm -f tests/lab3_answers.py tests/lab3_answers_shadow.py tests/seed_shadow.sql
 
-  # ==========================================================================
-  # LAB 4 -- only runs if tests/test_lab4.py, schema.sql, or lab4_seed.sql
-  # changed. Same dual-dataset / private-bundle pattern as Lab 3.
-  # ==========================================================================
   grade-lab4:
     needs: detect-changes
     if: needs.detect-changes.outputs.lab4_changed == 'true'
@@ -165,18 +133,7 @@ jobs:
           do
             sleep 2
           done
-      # tests/lab4_answers.py, tests/lab4_answers_shadow.py, and
-      # tests/lab4_seed_shadow.sql together form the private half of the
-      # Lab 4 autograder (see test_lab4.py's header docstring). None are
-      # committed to the repo; they're reconstructed here, only inside
-      # this ephemeral runner, from a single bundled base64-encoded secret.
-      #
-      # ONE-TIME SETUP (instructor does this once, not per student):
-      #   1. tar czf lab4_private_bundle.tar.gz lab4_answers.py lab4_answers_shadow.py lab4_seed_shadow.sql
-      #   2. base64 -w0 lab4_private_bundle.tar.gz   (copy the output)
-      #   3. Settings > Secrets and variables > Actions > New secret named
-      #      LAB4_PRIVATE_BUNDLE_B64 (set at the Classroom organization
-      #      level to cover every student repo at once).
+
       - name: Reconstruct private Lab 4 files
         env:
           LAB4_PRIVATE_BUNDLE_B64: ${{ secrets.LAB4_PRIVATE_BUNDLE_B64 }}
@@ -194,12 +151,7 @@ jobs:
         if: always()
         run: rm -f tests/lab4_answers.py tests/lab4_answers_shadow.py tests/lab4_seed_shadow.sql
 
-  # ==========================================================================
-  # LAB 5 -- only runs if tests/test_lab5.py, schema.sql, or lab5_seed.sql
-  # changed. Same dual-dataset / private-bundle pattern as Lab 3/Lab 4,
-  # covering the 4 views + 4 triggers (the application layer is graded
-  # manually, not by this job).
-  # ==========================================================================
+
   grade-lab5:
     needs: detect-changes
     if: needs.detect-changes.outputs.lab5_changed == 'true'
@@ -225,18 +177,7 @@ jobs:
           do
             sleep 2
           done
-      # tests/lab5_answers.py, tests/lab5_answers_shadow.py, and
-      # tests/lab5_seed_shadow.sql together form the private half of the
-      # Lab 5 autograder (see test_lab5.py's header docstring). None are
-      # committed to the repo; they're reconstructed here, only inside
-      # this ephemeral runner, from a single bundled base64-encoded secret.
-      #
-      # ONE-TIME SETUP (instructor does this once, not per student):
-      #   1. tar czf lab5_private_bundle.tar.gz lab5_answers.py lab5_answers_shadow.py lab5_seed_shadow.sql
-      #   2. base64 -w0 lab5_private_bundle.tar.gz   (copy the output)
-      #   3. Settings > Secrets and variables > Actions > New secret named
-      #      LAB5_PRIVATE_BUNDLE_B64 (set at the Classroom organization
-      #      level to cover every student repo at once).
+
       - name: Reconstruct private Lab 5 files
         env:
           LAB5_PRIVATE_BUNDLE_B64: ${{ secrets.LAB5_PRIVATE_BUNDLE_B64 }}
