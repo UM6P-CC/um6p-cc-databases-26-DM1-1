@@ -1,4 +1,25 @@
 """
+Lab 5 Autograder -- Views, Triggers (RLMS)
+================================================================================
+Course : Data Management -- UM6P, College of Computing
+Prof.  : Karima Echihabi
+Session: Fall 2026
+
+SCOPE
+-----
+This file grades the 4 required VIEWS and 4 required TRIGGERS from the Lab 5
+handout. The Python/PHP/J2EE application layer is NOT autogradable (no
+single language/CLI contract is mandated) and must be graded by hand from
+the student's submitted application + documentation.
+
+ARCHITECTURE -- same dual-dataset design as Lab 3/Lab 4, ADAPTED for triggers
+------------------------------------------------------------------------------
+VIEWS are graded exactly like Lab 3/4's queries: the student's CREATE VIEW
+statement is executed, then the view is queried and compared against a
+hardcoded expected result, against BOTH a public dataset (lab5_seed.sql)
+and a hidden shadow dataset (lab5_seed_shadow.sql) with a disjoint ID
+namespace -- same anti-hardcoding rationale as before.
+
 TRIGGERS cannot be graded by comparing a query result, because a trigger
 has no "output" of its own -- it's a side effect of an INSERT/UPDATE/DELETE.
 Each trigger test therefore:
@@ -19,8 +40,21 @@ real condition, each trigger is provoked TWICE with two different,
 non-overlapping scenarios (a fresh row pair each time) within the same
 public dataset.
 
+WHY DATES IN VIEW 1 / VIEW 4 ARE STORED AS DAY-OFFSETS
+------------------------------------------------------------------------------
+Like Lab 4's Q16, lab5_seed.sql anchors every reservation date to
+CURDATE() +/- INTERVAL, so View 1 (UpcomingReservationsByLab) and View 4
+(ProjectNextReservation) -- the two views whose own output includes a
+literal date -- have their expected dates stored as (..., day_offset, ...)
+tuples in lab5_answers.py, recomputed against CURDATE() at comparison time
+rather than frozen as an absolute date string.
 
+TAMPER PROTECTION
+-----------------
+Covered by the same test_integrity_manifest.txt mechanism as every other
+lab's test file, if/when that mechanism is re-enabled.
 """
+
 import os
 import pymysql
 import pytest
@@ -94,8 +128,6 @@ def cursor(public_connection, setup_database):
     cur.close()
 
 
-
-
 @pytest.fixture
 def shadow_cursor(shadow_connection, setup_database):
     cur = shadow_connection.cursor()
@@ -107,13 +139,13 @@ def normalize(rows):
     return sorted(tuple(str(v) if v is not None else None for v in row) for row in rows)
 
 
-# def _is_effectively_blank(sql):
-#     stripped_lines = []
-#     for line in sql.split("\n"):
-#         if "--" in line:
-#             line = line.split("--")[0]
-#         stripped_lines.append(line)
-#     return "".join(stripped_lines).strip() == ""
+def _is_effectively_blank(sql):
+    stripped_lines = []
+    for line in sql.split("\n"):
+        if "--" in line:
+            line = line.split("--")[0]
+        stripped_lines.append(line)
+    return "".join(stripped_lines).strip() == ""
 
 
 def _split_trigger_statements(sql):
@@ -147,9 +179,9 @@ def assert_view_matches_expected(cursor, shadow_cursor, view_sql, view_name, exp
     if expected is None or shadow_expected is None:
         pytest.skip(f"{label}: no expected-results entry filled in yet -- skipping.")
 
-    # assert not _is_effectively_blank(view_sql), (
-    #     f"{label}: no SQL was written for this view's CREATE VIEW statement."
-    # )
+    assert not _is_effectively_blank(view_sql), (
+        f"{label}: no SQL was written for this view's CREATE VIEW statement."
+    )
 
     for cur in (cursor, shadow_cursor):
         cur.execute(f"DROP VIEW IF EXISTS {view_name}")
@@ -198,9 +230,9 @@ def assert_view_matches_expected_with_offset(cursor, shadow_cursor, view_sql, vi
     if expected_with_offset is None or shadow_expected_with_offset is None:
         pytest.skip(f"{label}: no expected-results entry filled in yet -- skipping.")
 
-    # assert not _is_effectively_blank(view_sql), (
-    #     f"{label}: no SQL was written for this view's CREATE VIEW statement."
-    # )
+    assert not _is_effectively_blank(view_sql), (
+        f"{label}: no SQL was written for this view's CREATE VIEW statement."
+    )
 
     for cur in (cursor, shadow_cursor):
         cur.execute(f"DROP VIEW IF EXISTS {view_name}")
@@ -350,7 +382,18 @@ def test_01_view_upcoming_reservations_by_lab(cursor, shadow_cursor):
     Consider only rows with Reservation.Status = 'Approved'.
     """
     sql = """
-    -- WRITE YOUR CREATE VIEW STATEMENT HERE
+CREATE VIEW UpcomingReservationsByLab AS
+SELECT
+    l.Name                       AS LabName,
+    DATE(r.PlannedStartTime)     AS ReservationDate,
+    COUNT(*)                     AS ApprovedCount
+FROM Reservation r
+JOIN EquipmentUnit eu ON eu.SerialNumber = r.SerialNumber
+JOIN Laboratory l     ON l.LabID = eu.LabID
+WHERE r.Status = 'Approved'
+  AND r.PlannedStartTime >= CURDATE()
+  AND r.PlannedStartTime <  CURDATE() + INTERVAL 14 DAY
+GROUP BY l.Name, DATE(r.PlannedStartTime)
     """
     assert_view_matches_expected_with_offset(
         cursor, shadow_cursor, sql, "UpcomingReservationsByLab",
@@ -370,7 +413,28 @@ def test_02_view_equipment_usage_summary(cursor, shadow_cursor):
     Group by laboratory and equipment.
     """
     sql = """
-    -- WRITE YOUR CREATE VIEW STATEMENT HERE
+CREATE VIEW EquipmentUsageSummary AS
+SELECT
+    eu.LabID                                            AS LabID,
+    l.Name                                               AS LabName,
+    em.ModelID                                           AS EquipmentID,
+    em.CommercialName                                    AS EquipmentName,
+    COUNT(DISTINCT eu.SerialNumber)                       AS TotalUnits,
+    COUNT(DISTINCT CASE
+             WHEN eu.CurrentStatus = 'Operational'
+             THEN eu.SerialNumber END)                    AS AvailableUnits,
+    COUNT(DISTINCT CASE
+             WHEN r.Status = 'Approved'
+              AND NOW() BETWEEN r.PlannedStartTime AND r.PlannedEndTime
+             THEN eu.SerialNumber END)                    AS ReservedUnits,
+    COUNT(DISTINCT CASE
+             WHEN eu.CurrentStatus = 'UnderMaintenance'
+             THEN eu.SerialNumber END)                    AS MaintenanceUnits
+FROM EquipmentUnit eu
+JOIN EquipmentModel em ON em.ModelID = eu.ModelID
+JOIN Laboratory l      ON l.LabID = eu.LabID
+LEFT JOIN Reservation r ON r.SerialNumber = eu.SerialNumber
+GROUP BY eu.LabID, l.Name, em.ModelID, em.CommercialName
     """
     assert_view_matches_expected(
         cursor, shadow_cursor, sql, "EquipmentUsageSummary",
@@ -389,7 +453,21 @@ def test_03_view_research_user_reservation_thirty(cursor, shadow_cursor):
     Treat missing counts as zero.
     """
     sql = """
-    -- WRITE YOUR CREATE VIEW STATEMENT HERE
+CREATE VIEW ResearchUserReservationThirty AS
+SELECT
+    ru.PersonID                                          AS UserID,
+    p.FullName                                           AS FullName,
+    COUNT(r.ReservationID)                                AS TotalReservations,
+    SUM(CASE WHEN r.Status = 'Approved'  THEN 1 ELSE 0 END) AS ApprovedCount,
+    SUM(CASE WHEN r.Status = 'Pending'   THEN 1 ELSE 0 END) AS PendingCount,
+    SUM(CASE WHEN r.Status = 'Cancelled' THEN 1 ELSE 0 END) AS CancelledCount
+FROM ResearchUser ru
+JOIN Person p ON p.PersonID = ru.PersonID
+LEFT JOIN Reservation r
+       ON r.PersonID = ru.PersonID
+      AND r.PlannedStartTime >= CURDATE() - INTERVAL 30 DAY
+      AND r.PlannedStartTime <  CURDATE()
+GROUP BY ru.PersonID, p.FullName
     """
     assert_view_matches_expected(
         cursor, shadow_cursor, sql, "ResearchUserReservationThirty",
@@ -410,7 +488,29 @@ def test_04_view_project_next_reservation(cursor, shadow_cursor):
     today among rows with Status = 'Approved'.
     """
     sql = """
-    -- WRITE YOUR CREATE VIEW STATEMENT HERE
+CREATE VIEW ProjectNextReservation AS
+SELECT
+    rp.ProjectCode                AS ProjectID,
+    rp.Title                      AS ProjectTitle,
+    nr.NextReservationDate        AS NextReservationDate,
+    l.Name                        AS LabName,
+    em.CommercialName             AS EquipmentName,
+    eu.SerialNumber               AS UnitID
+FROM ResearchProject rp
+JOIN (
+    SELECT ProjectCode, MIN(PlannedStartTime) AS NextReservationDate
+    FROM Reservation
+    WHERE Status = 'Approved'
+      AND ProjectCode IS NOT NULL
+      AND PlannedStartTime > NOW()
+    GROUP BY ProjectCode
+) nr ON nr.ProjectCode = rp.ProjectCode
+JOIN Reservation r ON r.ProjectCode = rp.ProjectCode
+                   AND r.PlannedStartTime = nr.NextReservationDate
+                   AND r.Status = 'Approved'
+JOIN EquipmentUnit eu  ON eu.SerialNumber = r.SerialNumber
+JOIN EquipmentModel em ON em.ModelID = eu.ModelID
+JOIN Laboratory l      ON l.LabID = eu.LabID
     """
     assert_view_matches_expected_with_offset(
         cursor, shadow_cursor, sql, "ProjectNextReservation",
@@ -432,15 +532,57 @@ def test_05_trigger_no_double_booking_insert(cursor):
     with a clear error message.
 
     This test provokes the trigger with a new reservation on WN00001 that
-    overlaps an existing Approved reservation (WR0001, 2026-06-28
-    00:00-02:00) -- this INSERT must be rejected.
+    overlaps an existing Approved reservation (WR0001, which this seed
+    defines as CURDATE() + 3 days, 00:00-02:00) -- this INSERT must be
+    rejected. The overlap window below is expressed the same way (relative
+    to CURDATE()), so this test stays correct regardless of which real
+    calendar day it runs on.
     """
     trigger_sql = """
-    -- WRITE YOUR CREATE TRIGGER STATEMENT(S) HERE
+DELIMITER //
+
+CREATE TRIGGER trg_reservation_no_double_booking_insert
+BEFORE INSERT ON Reservation
+FOR EACH ROW
+BEGIN
+    IF NEW.Status = 'Approved' AND EXISTS (
+        SELECT 1 FROM Reservation r
+        WHERE r.SerialNumber = NEW.SerialNumber
+          AND r.Status = 'Approved'
+          AND r.PlannedStartTime < NEW.PlannedEndTime
+          AND r.PlannedEndTime   > NEW.PlannedStartTime
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+          'Double booking: this equipment unit already has an approved '
+          'reservation overlapping the requested time interval.';
+    END IF;
+END //
+
+CREATE TRIGGER trg_reservation_no_double_booking_update
+BEFORE UPDATE ON Reservation
+FOR EACH ROW
+BEGIN
+    IF NEW.Status = 'Approved' AND EXISTS (
+        SELECT 1 FROM Reservation r
+        WHERE r.SerialNumber = NEW.SerialNumber
+          AND r.Status = 'Approved'
+          AND r.ReservationID <> NEW.ReservationID
+          AND r.PlannedStartTime < NEW.PlannedEndTime
+          AND r.PlannedEndTime   > NEW.PlannedStartTime
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+          'Double booking: this equipment unit already has an approved '
+          'reservation overlapping the requested time interval.';
+    END IF;
+END //
+
+DELIMITER
     """
-    # assert not _is_effectively_blank(trigger_sql), (
-    #     "Trigger 1: no SQL was written."
-    # )
+    assert not _is_effectively_blank(trigger_sql), (
+        "Trigger 1: no SQL was written."
+    )
     for stmt in _split_trigger_statements(trigger_sql):
         cursor.execute(stmt)
 
@@ -449,7 +591,9 @@ def test_05_trigger_no_double_booking_insert(cursor):
             (ReservationID, SubmissionTimestamp, PlannedStartTime, PlannedEndTime,
              Purpose, Status, PersonID, SerialNumber, ProjectCode, ApprovedBy)
         VALUES
-            ('WRTST1', NOW(), '2026-06-28 01:00:00', '2026-06-28 03:00:00',
+            ('WRTST1', NOW(),
+             CURDATE() + INTERVAL 3 DAY + INTERVAL 1 HOUR,
+             CURDATE() + INTERVAL 3 DAY + INTERVAL 3 HOUR,
              'Overlap test', 'Approved', 'W00001', 'WN00001', NULL, NULL)
     """
     assert_statement_rejected(cursor, overlap_insert, "Trigger1-insert", "double")
@@ -461,13 +605,13 @@ def test_06_trigger_no_double_booking_update(cursor):
 
     Same rule as Trigger 1a, but provoked via an UPDATE that moves an
     existing reservation (WR0011, currently on WN00002) onto WN00001's
-    existing Approved time slot (2026-06-28 00:00-02:00, from WR0001).
+    existing Approved time slot (WR0001: CURDATE() + 3 days, 00:00-02:00).
     """
     overlap_update = """
         UPDATE Reservation
         SET SerialNumber = 'WN00001',
-            PlannedStartTime = '2026-06-28 00:30:00',
-            PlannedEndTime = '2026-06-28 01:30:00',
+            PlannedStartTime = CURDATE() + INTERVAL 3 DAY + INTERVAL 30 MINUTE,
+            PlannedEndTime = CURDATE() + INTERVAL 3 DAY + INTERVAL 90 MINUTE,
             Status = 'Approved'
         WHERE ReservationID = 'WR0011'
     """
@@ -509,11 +653,33 @@ def test_08_trigger_maintenance_sets_undermaintenance(cursor):
     Provoked on WN00004 (currently Operational, per lab5_seed.sql).
     """
     trigger_sql = """
-    -- WRITE YOUR CREATE TRIGGER STATEMENT(S) HERE
+DELIMITER //
+
+CREATE TRIGGER trg_maintenance_started
+AFTER INSERT ON Maintenance
+FOR EACH ROW
+BEGIN
+    UPDATE EquipmentUnit
+    SET CurrentStatus = 'UnderMaintenance'
+    WHERE SerialNumber = NEW.SerialNumber;
+END //
+
+CREATE TRIGGER trg_maintenance_finished
+AFTER UPDATE ON Maintenance
+FOR EACH ROW
+BEGIN
+    IF NEW.Outcome IS NOT NULL AND OLD.Outcome IS NULL THEN
+        UPDATE EquipmentUnit
+        SET CurrentStatus = 'Operational'
+        WHERE SerialNumber = NEW.SerialNumber;
+    END IF;
+END //
+
+DELIMITER
     """
-    # assert not _is_effectively_blank(trigger_sql), (
-    #     "Trigger 2: no SQL was written."
-    # )
+    assert not _is_effectively_blank(trigger_sql), (
+        "Trigger 2: no SQL was written."
+    )
     for stmt in _split_trigger_statements(trigger_sql):
         cursor.execute(stmt)
 
@@ -580,11 +746,45 @@ def test_10_trigger_rejects_invalid_status(cursor):
     Use SIGNAL to reject invalid rows with a clear error message.
     """
     trigger_sql = """
-    -- WRITE YOUR CREATE TRIGGER STATEMENT(S) HERE
+DELIMITER //
+
+CREATE TRIGGER trg_equipmentunit_valid_state_insert
+BEFORE INSERT ON EquipmentUnit
+FOR EACH ROW
+BEGIN
+    IF NEW.CurrentStatus NOT IN ('Operational', 'Retired', 'UnderMaintenance') THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+          'Invalid CurrentStatus: must be Operational, Retired, or UnderMaintenance.';
+    END IF;
+    IF NEW.LabID IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+          'Invalid EquipmentUnit: a laboratory assignment (LabID) is required.';
+    END IF;
+END //
+
+CREATE TRIGGER trg_equipmentunit_valid_state_update
+BEFORE UPDATE ON EquipmentUnit
+FOR EACH ROW
+BEGIN
+    IF NEW.CurrentStatus NOT IN ('Operational', 'Retired', 'UnderMaintenance') THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+          'Invalid CurrentStatus: must be Operational, Retired, or UnderMaintenance.';
+    END IF;
+    IF NEW.LabID IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+          'Invalid EquipmentUnit: a laboratory assignment (LabID) is required.';
+    END IF;
+END //
+
+DELIMITER
     """
-    # assert not _is_effectively_blank(trigger_sql), (
-    #     "Trigger 3: no SQL was written."
-    # )
+    assert not _is_effectively_blank(trigger_sql), (
+        "Trigger 3: no SQL was written."
+    )
     for stmt in _split_trigger_statements(trigger_sql):
         cursor.execute(stmt)
 
@@ -645,11 +845,35 @@ def test_13_trigger_blocks_delete_with_equipment(cursor):
     Provoked on V0001 (PhotonicsLab), which has equipment units in this seed.
     """
     trigger_sql = """
-    -- WRITE YOUR CREATE TRIGGER STATEMENT HERE
+DELIMITER //
+
+CREATE TRIGGER trg_laboratory_protect_delete
+BEFORE DELETE ON Laboratory
+FOR EACH ROW
+BEGIN
+    IF EXISTS (SELECT 1 FROM EquipmentUnit eu WHERE eu.LabID = OLD.LabID) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+          'Cannot delete laboratory: equipment units are still assigned to it. '
+          'Reassign or delete the dependent equipment units first.';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM Reservation r
+        JOIN EquipmentUnit eu ON eu.SerialNumber = r.SerialNumber
+        WHERE eu.LabID = OLD.LabID
+    ) THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+          'Cannot delete laboratory: reservations exist for equipment units '
+          'in this laboratory. Reassign or delete the dependent data first.';
+    END IF;
+END //
+
+DELIMITER
     """
-    # assert not _is_effectively_blank(trigger_sql), (
-    #     "Trigger 4: no SQL was written."
-    # )
+    assert not _is_effectively_blank(trigger_sql), (
+        "Trigger 4: no SQL was written."
+    )
     for stmt in _split_trigger_statements(trigger_sql):
         cursor.execute(stmt)
 
