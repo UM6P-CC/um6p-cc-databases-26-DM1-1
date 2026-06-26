@@ -12,6 +12,7 @@ SEED_FILE = os.path.join(HERE, "lab4_seed.sql")
 SHADOW_SEED_FILE = os.path.join(HERE, "lab4_seed_shadow.sql")
 
 
+
 @pytest.fixture(scope="session")
 def admin_connection():
     conn = pymysql.connect(host="127.0.0.1", user="root", password="root", autocommit=True)
