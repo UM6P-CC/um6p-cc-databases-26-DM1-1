@@ -2,9 +2,9 @@ name: Autograde
 
 # Path filters mean: a push that only touches Lab 3 files triggers ONLY the
 # grade-lab3 job; a push that only touches Lab 0 files triggers ONLY
-# grade-lab0; same for Lab 4. A push touching files from multiple labs runs
-# each relevant job in parallel. A push touching none of them (e.g. a README
-# edit) triggers no grading job at all.
+# grade-lab0; same for Lab 4 and Lab 5. A push touching files from multiple
+# labs runs each relevant job in parallel. A push touching none of them
+# (e.g. a README edit) triggers no grading job at all.
 #
 # Lab 2 grading is currently DISABLED (no lab2 filter / grade-lab2 job) --
 # re-add it the same way grade-lab3/grade-lab4 are structured if needed later.
@@ -24,6 +24,7 @@ jobs:
       lab0_changed: ${{ steps.filter.outputs.lab0 }}
       lab3_changed: ${{ steps.filter.outputs.lab3 }}
       lab4_changed: ${{ steps.filter.outputs.lab4 }}
+      lab5_changed: ${{ steps.filter.outputs.lab5 }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -41,6 +42,10 @@ jobs:
               - 'tests/test_lab4.py'
               - 'tests/schema.sql'
               - 'tests/lab4_seed.sql'
+            lab5:
+              - 'tests/test_lab5.py'
+              - 'tests/schema.sql'
+              - 'tests/lab5_seed.sql'
 
   # ==========================================================================
   # LAB 0 -- only runs if tests/test_lab0.py (or requirements.txt) changed
@@ -187,16 +192,18 @@ jobs:
         run: pytest tests/test_lab4.py -v --tb=short
       - name: Clean up reconstructed private files
         if: always()
-        run: rm -f tests/lab4_answers.py tests/lab4_answers_shadow.py tests/lab4_seed_shadow.
-    # ==========================================================================
+        run: rm -f tests/lab4_answers.py tests/lab4_answers_shadow.py tests/lab4_seed_shadow.sql
+
+  # ==========================================================================
   # LAB 5 -- only runs if tests/test_lab5.py, schema.sql, or lab5_seed.sql
-  # changed. Same dual-dataset / private-bundle pattern as Labs 3 and 4.
+  # changed. Same dual-dataset / private-bundle pattern as Lab 3/Lab 4,
+  # covering the 4 views + 4 triggers (the application layer is graded
+  # manually, not by this job).
   # ==========================================================================
   grade-lab5:
     needs: detect-changes
     if: needs.detect-changes.outputs.lab5_changed == 'true'
     runs-on: ubuntu-latest
-
     services:
       mysql:
         image: mysql:8.0
@@ -204,45 +211,45 @@ jobs:
           MYSQL_ROOT_PASSWORD: root
         ports:
           - 3306:3306
-
     steps:
       - uses: actions/checkout@v4
-
       - name: Install Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - name: Install deps
         run: pip install -r tests/requirements.txt
-
       - name: Wait for MySQL
         run: |
           until mysqladmin ping -h127.0.0.1 -uroot -proot --silent
           do
             sleep 2
           done
-
-
+      # tests/lab5_answers.py, tests/lab5_answers_shadow.py, and
+      # tests/lab5_seed_shadow.sql together form the private half of the
+      # Lab 5 autograder (see test_lab5.py's header docstring). None are
+      # committed to the repo; they're reconstructed here, only inside
+      # this ephemeral runner, from a single bundled base64-encoded secret.
+      #
+      # ONE-TIME SETUP (instructor does this once, not per student):
+      #   1. tar czf lab5_private_bundle.tar.gz lab5_answers.py lab5_answers_shadow.py lab5_seed_shadow.sql
+      #   2. base64 -w0 lab5_private_bundle.tar.gz   (copy the output)
+      #   3. Settings > Secrets and variables > Actions > New secret named
+      #      LAB5_PRIVATE_BUNDLE_B64 (set at the Classroom organization
+      #      level to cover every student repo at once).
       - name: Reconstruct private Lab 5 files
         env:
           LAB5_PRIVATE_BUNDLE_B64: ${{ secrets.LAB5_PRIVATE_BUNDLE_B64 }}
         run: |
           if [ -z "$LAB5_PRIVATE_BUNDLE_B64" ]; then
-            echo "::error::LAB5_PRIVATE_BUNDLE_B64 secret is not set."
+            echo "::error::LAB5_PRIVATE_BUNDLE_B64 secret is not set. Add it under Settings > Secrets and variables > Actions (instructor-only, one-time setup)."
             exit 1
           fi
-
           echo "$LAB5_PRIVATE_BUNDLE_B64" | base64 -d > /tmp/lab5_private_bundle.tar.gz
           tar xzf /tmp/lab5_private_bundle.tar.gz -C tests
           rm -f /tmp/lab5_private_bundle.tar.gz
-
       - name: Run Lab 5 tests only
         run: pytest tests/test_lab5.py -v --tb=short
-
       - name: Clean up reconstructed private files
         if: always()
-        run: |
-          rm -f tests/lab5_answers.py \
-                tests/lab5_answers_shadow.py \
-                tests/lab5_seed_shadow.sql
+        run: rm -f tests/lab5_answers.py tests/lab5_answers_shadow.py tests/lab5_seed_shadow.sql
