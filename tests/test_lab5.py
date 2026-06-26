@@ -93,6 +93,8 @@ def cursor(public_connection, setup_database):
     yield cur
     cur.close()
 
+    
+
 
 @pytest.fixture
 def shadow_cursor(shadow_connection, setup_database):
