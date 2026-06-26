@@ -3,9 +3,7 @@ import pymysql
 import pytest
 
 
-# ============================================================================
 # CONFIG
-# ============================================================================
 DB_NAME = "RLMS_LAB3"
 SHADOW_DB_NAME = "RLMS_LAB3_SHADOW"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -16,7 +14,6 @@ SHADOW_SEED_FILE = os.path.join(HERE, "seed_shadow.sql")
 
 @pytest.fixture(scope="session")
 def admin_connection():
-    """Used only for one-time setup (creating/dropping/seeding databases)."""
     conn = pymysql.connect(
         host="127.0.0.1",
         user="root",
@@ -87,7 +84,6 @@ def setup_database(admin_connection):
     against both (see assert_matches_expected) so that a query hardcoded to
     literal values from the public dataset will fail against the shadow
     dataset, while a genuinely correct, general-purpose query passes both.
-
     """
     cur = admin_connection.cursor()
 
@@ -124,9 +120,7 @@ def shadow_cursor(shadow_connection, setup_database):
     cur.close()
 
 
-# ============================================================================
 # COMPARISON HELPER
-# ============================================================================
 def normalize(rows):
     """Order-insensitive comparison: sorted tuple multiset."""
     return sorted(tuple(row) for row in rows)
@@ -136,27 +130,20 @@ def assert_matches_expected(cursor, shadow_cursor, sql, expected, shadow_expecte
     """
     Runs `sql` against BOTH the public dataset (via `cursor`) and the
     shadow dataset (via `shadow_cursor`), comparing each to its own
-    expected result as an order-insensitive multiset. Credit requires a
-    match on BOTH -- a query that hardcodes literal values observed from
-    the public dataset (e.g. by reading seed.sql or by brute-forcing
-    pass/fail feedback) will reliably fail the shadow check, since none of
-    seed_shadow.sql's IDs overlap with seed.sql's.
+    expected result as an order-insensitive multiset..
 
 
     FAILURE MESSAGE ASYMMETRY (deliberate):
       - Public dataset mismatch -> shows the literal expected vs. actual
         rows. seed.sql is already visible to the student (it's committed to
-        their repo), so showing its values costs nothing -- they could query
-        that database directly anyway -- and the detail helps them debug.
+        their repo), the detail helps them debug.
       - Shadow dataset mismatch -> shows ROW COUNTS ONLY, never literal
-        values. seed_shadow.sql is the actual hidden defense; printing its
-        rows in a CI log a student can read would hand back exactly what
-        hiding the file was meant to prevent.
+        values.
     """
     if expected is None or shadow_expected is None:
         pytest.skip(
             f"{query_label}: no expected-results entry filled in yet for "
-            f"one or both datasets -- skipping rather than risking a false pass."
+            f"one or both datasets, skipping rather than risking a false pass."
         )
 
     cursor.execute(sql)
@@ -175,31 +162,19 @@ def assert_matches_expected(cursor, shadow_cursor, sql, expected, shadow_expecte
 
     details = []
     if not public_ok:
-        # Safe to show literal values -- seed.sql is visible to the student.
         details.append(
             f"public dataset result mismatch:\n"
             f"    Expected ({len(expected_rows)} row(s)): {expected_rows}\n"
             f"    Got      ({len(actual_rows)} row(s)): {actual_rows}"
         )
     if not shadow_ok:
-        # Counts only -- seed_shadow.sql must never be revealed.
         details.append(
             f"hidden verification dataset result mismatch: "
             f"expected {len(shadow_expected_rows)} row(s), "
             f"got {len(shadow_actual_rows)} row(s) "
-            f"(values withheld -- this dataset is intentionally hidden)"
         )
-        if public_ok:
-            details.append(
-                "    (this query matched the public dataset but NOT the hidden "
-                "one -- if your SQL hardcodes specific ID values instead of "
-                "expressing the join/filter logic the question asks for, this "
-                "is the expected failure mode)"
-            )
 
     pytest.fail(f"{query_label} result mismatch:\n  " + "\n  ".join(details))
-
-
 
 
 def test_01_research_users_with_reservation(cursor, shadow_cursor):
@@ -215,7 +190,6 @@ def test_01_research_users_with_reservation(cursor, shadow_cursor):
     JOIN Reservation r ON r.PersonID = p.PersonID
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[1], SHADOW_EXPECTED_RESULTS[1], "Q1")
-
 
 def test_02_users_attached_or_leading_project(cursor, shadow_cursor):
     """
