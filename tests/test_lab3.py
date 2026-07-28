@@ -1,111 +1,9 @@
-"""
-Lab 3 Autograder -- FILLED-IN REFERENCE (instructor-only, NOT the student template)
-================================================================================
-Course : Data Management -- UM6P, College of Computing
-Prof.  : Karima Echihabi
-Session: Fall 2026
-
-!!! THIS COPY HAS THE CORRECT SQL FILLED IN -- DO NOT GIVE TO STUDENTS !!!
-------------------------------------------------------------------------------
-Every "-- WRITE YOUR SQL HERE" slot below has been replaced with verified,
-correct SQL for all 15 Lab 3 Part 1 queries. This copy also includes the
-connection-isolation fix (separate MySQL connections per database instead
-of two cursors sharing one connection) -- confirmed 15/15 PASSED against a
-real MySQL 8.0 server with this exact file.
-
-Keep this alongside lab3_answers.py, lab3_answers_shadow.py, and
-seed_shadow.sql -- never in the student-facing repository or the GitHub
-Classroom template. Use it only to dry-run the autograder (e.g. on a
-throwaway branch) before publishing the assignment, or to sanity-check
-future changes to schema.sql / seed.sql / seed_shadow.sql.
-
-SCOPE
------
-This file grades ONLY Part 1 of Lab 3: the 15 SQL queries written against the
-RLMS schema. The Relational Algebra expressions and the functional-dependency
-list (Part 2) are NOT autogradable and must be graded by hand.
-
-HOW THIS DIFFERS FROM THE LAB 0 TEST FILE
-------------------------------------------
-In Lab 0, students CREATE the schema and INSERT the data themselves, so the
-test file builds everything from the student's own SQL. In Lab 3 the schema
-and data already exist conceptually (from Labs 1-2): students write ONLY
-SELECT queries. This harness therefore:
-  1. Creates a fresh database (RLMS_LAB3) for the test session.
-  2. Loads a FIXED instructor-provided schema (`schema.sql`).
-  3. Loads a FIXED, hand-built adversarial seed dataset (`seed.sql`).
-  4. Runs each student SELECT (pasted into the marked slot below) against
-     that fixed data and compares the result to an expected answer that is
-     imported from a SEPARATE, instructor-only file (see FILE LAYOUT below).
-
-Because the data is fixed and known in advance, comparisons here use
-order-insensitive SET comparison (sorted tuple multisets) -- none of the
-15 Lab 3 queries specify an ORDER BY in their wording, so row order must
-not affect the grade.
-
-FILE LAYOUT -- what students see vs. what stays private
------------------------------------------------------------
-  Distributed to students (GitHub Classroom template repo):
-    test_lab3.py   -- this file: fixtures, harness, 15 test stubs.
-                       Contains NO expected answers.
-    schema.sql     -- DDL for the 19 RLMS relations. Not a secret -- this is
-                       the schema students already know from Labs 1-2.
-    seed.sql       -- the fixed seed dataset. Also not a secret -- the data
-                       itself doesn't reveal which rows answer which query;
-                       only lab3_answers.py does that.
-
-  INSTRUCTOR-ONLY, kept off the student repo:
-    lab3_answers.py -- the EXPECTED_RESULTS dict. test_lab3.py imports this
-                        at collection time. If a student's environment is
-                        missing this file, pytest fails immediately with a
-                        clear ImportError (see below) instead of silently
-                        grading against nothing.
-
-  On your grading runner (GitHub Actions, local machine, etc.), place
-  lab3_answers.py in the same directory as test_lab3.py before running
-  pytest. Do NOT add lab3_answers.py to the assignment template repository
-  that gets forked/cloned into student repos.
-
-If your official Lab 2 answer key uses different table/column names than the
-ones in schema.sql, edit schema.sql + seed.sql (and lab3_answers.py) to
-match -- the test bodies themselves only ever reference EXPECTED_RESULTS,
-never table/column names directly, so no changes to this .py file should be
-needed.
-
-SCHEMA NOTE (please verify against your official Lab 2 answer key)
---------------------------------------------------------------------
-The schema used here was reconstructed from the Lab 1 conceptual-design
-requirements and prior course material. A few relations are flagged
-"VERIFY" in schema.sql where the exact column name was uncertain
-(ServiceProvider's primary key name, Maintenance's technician linkage,
-and the unit for Maintenance.DowntimeDuration). These do not affect any
-of the 15 graded queries below, but should be checked in case your official
-answer key differs.
-
-WHY THE EXPECTED RESULTS ARE HARDCODED VALUES (not embedded reference SQL)
------------------------------------------------------------------------------
-Hardcoding the expected *rows* (computed once against the fixed seed data)
-means students must write their own correct SQL to reproduce those rows --
-exactly like Lab 0's approach, just adapted to a SELECT-only lab, and with
-the added step that the values themselves now live outside the student's
-reach entirely.
-
-THE None-SKIPS-SAFELY RULE
-----------------------------
-If EXPECTED_RESULTS[n] is None, that test is SKIPPED rather than silently
-passed or failed. This prevents false positives from an instructor who
-forgot to fill in an expected value -- a missing answer key entry must never
-look like a correct submission.
-"""
-
 import os
 import pymysql
 import pytest
 
 
-# ============================================================================
 # CONFIG
-# ============================================================================
 DB_NAME = "RLMS_LAB3"
 SHADOW_DB_NAME = "RLMS_LAB3_SHADOW"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -114,23 +12,7 @@ SEED_FILE = os.path.join(HERE, "seed.sql")
 SHADOW_SEED_FILE = os.path.join(HERE, "seed_shadow.sql")
 
 
-# ============================================================================
-# FIXTURES (same style as the Lab 0 test file)
-# ============================================================================
-#
-# IMPORTANT: two SEPARATE connections are used here (one per database),
-# rather than two cursors sharing one connection. MySQL's `USE <db>` is a
-# CONNECTION-level (session-level) setting, not a cursor-level one -- if
-# `cursor` and `shadow_cursor` were two cursor objects on the same
-# connection, the LAST `USE` executed (whichever fixture resolves second)
-# would silently override the database selection for BOTH cursors, since
-# they'd really be sharing one session. That bug would make every query
-# run against whichever database was selected last, regardless of which
-# cursor variable issued it -- exactly the kind of failure that's easy to
-# miss because each cursor *looks* independent in Python even though the
-# server treats them as the same session. Separate connections avoid this
-# category of bug entirely: each connection's active database is fixed for
-# its own lifetime.
+
 @pytest.fixture(scope="session")
 def admin_connection():
     """Used only for one-time setup (creating/dropping/seeding databases)."""
@@ -171,12 +53,6 @@ def shadow_connection():
 
 
 def _load_sql_file_into_db(cur, path, required_for_msg):
-    """
-    Reads `path`, strips '--' comments line-by-line (must happen BEFORE
-    splitting on ';' or multi-line comment blocks get swallowed into one
-    malformed "statement"), then executes each non-empty statement against
-    the cursor's currently-selected database.
-    """
     if not os.path.exists(path):
         raise FileNotFoundError(
             f"Required file not found: {path}\n{required_for_msg}"
@@ -202,20 +78,6 @@ def _load_sql_file_into_db(cur, path, required_for_msg):
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_database(admin_connection):
-    """
-    Runs once per test session: builds TWO independent databases --
-    RLMS_LAB3 (from schema.sql + seed.sql, the public dataset) and
-    RLMS_LAB3_SHADOW (from schema.sql + seed_shadow.sql, a second hidden
-    dataset with a disjoint ID namespace). Every student query is later run
-    against both (see assert_matches_expected) so that a query hardcoded to
-    literal values from the public dataset will fail against the shadow
-    dataset, while a genuinely correct, general-purpose query passes both.
-
-    Uses admin_connection (no fixed database) purely for DDL setup, NOT the
-    same connection objects that public_connection/shadow_connection use for
-    actual test queries -- this keeps setup entirely separate from the
-    per-database connections that `cursor`/`shadow_cursor` rely on.
-    """
     cur = admin_connection.cursor()
 
     for db_name, seed_file in ((DB_NAME, SEED_FILE), (SHADOW_DB_NAME, SHADOW_SEED_FILE)):
@@ -251,38 +113,13 @@ def shadow_cursor(shadow_connection, setup_database):
     cur.close()
 
 
-# ============================================================================
 # COMPARISON HELPER
-# ============================================================================
 def normalize(rows):
     """Order-insensitive comparison: sorted tuple multiset."""
     return sorted(tuple(row) for row in rows)
 
 
 def assert_matches_expected(cursor, shadow_cursor, sql, expected, shadow_expected, query_label):
-    """
-    Runs `sql` against BOTH the public dataset (via `cursor`) and the
-    shadow dataset (via `shadow_cursor`), comparing each to its own
-    expected result as an order-insensitive multiset. Credit requires a
-    match on BOTH -- a query that hardcodes literal values observed from
-    the public dataset (e.g. by reading seed.sql or by brute-forcing
-    pass/fail feedback) will reliably fail the shadow check, since none of
-    seed_shadow.sql's IDs overlap with seed.sql's.
-
-    If `expected` or `shadow_expected` is None, the test is SKIPPED rather
-    than silently passed or failed -- a missing answer-key entry must never
-    look like a correct submission.
-
-    FAILURE MESSAGE ASYMMETRY (deliberate):
-      - Public dataset mismatch -> shows the literal expected vs. actual
-        rows. seed.sql is already visible to the student (it's committed to
-        their repo), so showing its values costs nothing -- they could query
-        that database directly anyway -- and the detail helps them debug.
-      - Shadow dataset mismatch -> shows ROW COUNTS ONLY, never literal
-        values. seed_shadow.sql is the actual hidden defense; printing its
-        rows in a CI log a student can read would hand back exactly what
-        hiding the file was meant to prevent.
-    """
     if expected is None or shadow_expected is None:
         pytest.skip(
             f"{query_label}: no expected-results entry filled in yet for "
@@ -330,41 +167,22 @@ def assert_matches_expected(cursor, shadow_cursor, sql, expected, shadow_expecte
     pytest.fail(f"{query_label} result mismatch:\n  " + "\n  ".join(details))
 
 
-# ============================================================================
-# EXPECTED RESULTS (public + shadow)
-# Imported from lab3_answers.py and lab3_answers_shadow.py, neither of which
-# is distributed to students (see module docstring above). If either file is
-# missing, this import fails loudly at collection time rather than silently
-# grading against no expected values.
-# ============================================================================
 try:
     from lab3_answers import EXPECTED_RESULTS
 except ImportError as exc:
     raise ImportError(
-        "lab3_answers.py not found. This file holds the private expected "
-        "results for Lab 3 (public dataset) and is intentionally NOT "
-        "included in the student-facing repository. If you are the "
-        "instructor running grading, place lab3_answers.py next to "
-        "test_lab3.py (or anywhere on the Python path) before running "
-        "pytest."
+        "lab3_answers.py not found. 
     ) from exc
 
 try:
     from lab3_answers_shadow import EXPECTED_RESULTS as SHADOW_EXPECTED_RESULTS
 except ImportError as exc:
     raise ImportError(
-        "lab3_answers_shadow.py not found. This file holds the private "
-        "expected results for Lab 3's SECOND, hidden verification dataset "
-        "and is intentionally NOT included in the student-facing "
-        "repository. If you are the instructor running grading, place "
-        "lab3_answers_shadow.py next to test_lab3.py (or anywhere on the "
-        "Python path) before running pytest."
+        "lab3_answers_shadow.py not found. 
     ) from exc
 
 
-# ============================================================================
-# TESTS -- one per Lab 3 Part 1 query, docstring lifted from the Lab 3 PDF
-# ============================================================================
+# 
 def test_01_research_users_with_reservation(cursor, shadow_cursor):
     """
     Query 1
