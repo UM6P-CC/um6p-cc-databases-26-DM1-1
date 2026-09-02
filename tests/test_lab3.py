@@ -161,7 +161,22 @@ def assert_matches_expected(cursor, shadow_cursor, sql, expected, shadow_expecte
     pytest.fail(f"{query_label} result mismatch:\n  " + "\n  ".join(details))
 
 
- 
+try:
+    from lab3_answers import EXPECTED_RESULTS
+except ImportError as exc:
+    raise ImportError(
+        "lab3_answers.py not found.3"
+    ) from exc
+
+try:
+    from lab3_answers_shadow import EXPECTED_RESULTS as SHADOW_EXPECTED_RESULTS
+except ImportError as exc:
+    raise ImportError(
+        "lab3_answers_shadow.py not found."
+    ) from exc
+
+
+# 
 def test_01_research_users_with_reservation(cursor, shadow_cursor):
     """
     Query 1

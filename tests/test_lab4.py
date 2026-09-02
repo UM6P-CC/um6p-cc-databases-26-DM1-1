@@ -133,10 +133,7 @@ def assert_matches_expected(cursor, shadow_cursor, sql, expected, shadow_expecte
         )
         if public_ok:
             details.append(
-                "    (this query matched the public dataset but NOT the hidden "
-                "one -- if your SQL hardcodes specific ID values instead of "
-                "expressing the join/filter logic the question asks for, this "
-                "is the expected failure mode)"
+                "    (this query matched the public dataset but NOT the hidden one "
             )
 
     pytest.fail(f"{query_label} result mismatch:\n  " + "\n  ".join(details))
@@ -186,9 +183,10 @@ def assert_matches_expected_q16(cursor, shadow_cursor, sql, expected_offsets, sh
         )
         if public_ok:
             details.append(
-                "    (this query matched the public dataset but NOT the hidden one)"
+                " (this query matched the public dataset but NOT the hidden one)"
             )
     pytest.fail(f"{query_label} result mismatch:\n  " + "\n  ".join(details))
+
 
 
 
@@ -196,8 +194,9 @@ try:
     from lab4_answers import EXPECTED_RESULTS
 except ImportError as exc:
     raise ImportError(
-        "lab4_answers.py not found."
-
+        "lab4_answers.py not found. This file holds the private expected "
+        "results for Lab 4 (public dataset) and is intentionally NOT "
+        "included in the student-facing repository."
     ) from exc
 
 try:
@@ -205,6 +204,7 @@ try:
 except ImportError as exc:
     raise ImportError(
         "lab4_answers_shadow.py not found. This file holds the private "
+        "expected results for Lab 4's hidden verification dataset."
     ) from exc
 
 
@@ -212,12 +212,32 @@ def test_01_query_1(cursor, shadow_cursor):
     """
     Query 1
 
-    Select all persons ordered by FullName (Person has no separate first/last name columns).\n\n    NOTE: the autograder also separately checks that the result is\n    actually ORDERED by FullName ascending (see test_01_order_check below).
+    Select all persons ordered by FullName (Person has no separate
+    first/last name columns).
+
+    NOTE: this test also checks that the result is actually ORDERED by
+    FullName ascending, not just that it contains the right rows.
     """
     sql = """
     SELECT PersonID, FullName FROM Person ORDER BY FullName
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[1], SHADOW_EXPECTED_RESULTS[1], "Q1")
+
+    # Order check: the multiset comparison above ignores row order, so a
+    # query returning the right rows in the wrong order would otherwise
+    # still pass. Checked against the public dataset only.
+    cursor.execute(sql)
+    rows = cursor.fetchall()
+    assert rows, (
+        "Q1: query returned zero rows -- Person should never be empty in "
+        "this seed; did you write the right query?"
+    )
+    names = [row[1] if len(row) > 1 else row[0] for row in rows]
+    assert names == sorted(names), (
+        f"Query 1 result is not sorted by FullName ascending.\n"
+        f"  Got order: {names}\n"
+        f"  Expected:  {sorted(names)}"
+    )
 
 
 def test_02_query_2(cursor, shadow_cursor):
@@ -272,7 +292,7 @@ def test_06_query_6(cursor, shadow_cursor):
     """
     Query 6
 
-    Compute the average purchase cost of equipment per laboratory (excluding any unit with a non-positive cost -- see Query 20).
+    Compute the average purchase cost of equipment per laboratory (excluding any unit with a non-positive cost).
     """
     sql = """
     SELECT LabID, ROUND(AVG(PurchaseCost),2) FROM EquipmentUnit WHERE PurchaseCost > 0 GROUP BY LabID
@@ -446,32 +466,3 @@ def test_20_query_20(cursor, shadow_cursor):
     SELECT SerialNumber FROM EquipmentUnit WHERE CurrentStatus IS NULL OR AcquisitionDate IS NULL OR AcquisitionDate > CURDATE() OR PurchaseCost IS NULL OR PurchaseCost <= 0
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[20], SHADOW_EXPECTED_RESULTS[20], "Q20")
-
-
-
-def test_01_order_check_fullname_ascending(cursor):
-    """
-    Additional structural check for Query 1: confirms the result is
-    actually ORDERED by FullName (not just containing the right rows in
-    some order the multiset comparison above would treat as equivalent).
-    """
-    sql = """
-    SELECT PersonID, FullName FROM Person ORDER BY FullName
-    """
-    assert not _is_effectively_blank(sql), (
-        "Q1 (order check): no SQL was written (only the placeholder "
-        "comment remains). Replace '-- WRITE YOUR SQL QUERY HERE' with "
-        "an actual query."
-    )
-    cursor.execute(sql)
-    rows = cursor.fetchall()
-    assert rows, (
-        "Q1 (order check): query returned zero rows -- Person should "
-        "never be empty in this seed; did you write the right query?"
-    )
-    names = [row[1] if len(row) > 1 else row[0] for row in rows]
-    assert names == sorted(names), (
-        f"Query 1 result is not sorted by FullName ascending.\n"
-        f"  Got order: {names}\n"
-        f"  Expected:  {sorted(names)}"
-    )
