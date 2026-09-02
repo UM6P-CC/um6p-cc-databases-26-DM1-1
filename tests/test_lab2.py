@@ -21,15 +21,7 @@ def connection():
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_database(connection):
-    """Creates a fresh, empty RLMS_LAB2 once per session. Each Exercise
-    below then creates ONE table into this same database using the
-    student's own SQL -- later exercises rely on earlier ones having
-    already created the tables they reference via FOREIGN KEY (same
-    pattern as Lab 5's cumulative trigger tests). If you run a single
-    exercise in isolation rather than the whole file, run the exercises
-    it depends on first, or its FOREIGN KEY will fail with a real MySQL
-    error naming the missing referenced table.
-    """
+   
     cur = connection.cursor()
     cur.execute(f"DROP DATABASE IF EXISTS {DB_NAME}")
     cur.execute(f"CREATE DATABASE {DB_NAME}")
@@ -46,21 +38,9 @@ def cursor(connection, setup_database):
     cur.close()
 
 
-# ============================================================================
-# EXPECTED SCHEMA (private answer key)
-# ============================================================================
-try:
-    from lab2_expected_schema import EXPECTED_SCHEMA
-except ImportError as exc:
-    raise ImportError(
-        "lab2_expected_schema.py not found. This file holds the private "
-        "expected relational schema for Lab 2 and is intentionally NOT "
-        "included in the student-facing repository."
-    ) from exc
-
 
 # ============================================================================
-# INFORMATION_SCHEMA introspection + grading helper
+# INFORMATION_SCHEMA introspection 
 # ============================================================================
 
 def _table_exists(cur, table_name):
@@ -103,14 +83,6 @@ def _actual_foreign_keys(cur, table_name):
 
 
 def assert_table_matches_expected(cursor, sql, table_name):
-    """
-    Runs the student's CREATE TABLE statement for `table_name`, then checks
-    it against the private answer key via INFORMATION_SCHEMA: the table
-    must exist, have exactly the expected columns (name match, case-
-    insensitive), the expected primary key, and the expected foreign keys.
-    Column data TYPES are intentionally not checked (graded flexibly per
-    the course rubric -- e.g. VARCHAR(50) vs VARCHAR(120) are both fine).
-    """
     cursor.execute(sql)
 
     expected = EXPECTED_SCHEMA[table_name]
@@ -157,7 +129,7 @@ def assert_table_matches_expected(cursor, sql, table_name):
 
 
 # ============================================================================
-# EXERCISES -- one CREATE TABLE per table, in dependency order
+# TESTS
 # ============================================================================
 
 def test_01_create_person(cursor):
