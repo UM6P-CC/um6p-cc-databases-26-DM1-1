@@ -11,9 +11,8 @@
        uses: "UM6P-CC/classroom50/.github/workflows/autograde-runner.yaml@main"
        secrets: inherit
    ```
-   Add `secrets: inherit` right under the `uses:` line, exactly as shown. This step only needs to be done **once per lab repo**, not before every submission.
 4. **Write your answers** in the location specified for that lab (see below).
-5. **Commit and push**, then run:
+5. Save your work then run:
    ```
    gh student submit
    ```
@@ -29,33 +28,24 @@
   -- WRITE YOUR SQL HERE
   """
   ```
-  Write your SQL directly inside the triple quotes. Do not rename, delete, or restructure the surrounding test code — only edit the SQL inside each block.
-
-- **Lab 2 is split into two parts:**
-  1. **Relational schema design** — derive the tables, attributes, primary keys, and foreign keys from the ER diagram yourself (submitted separately, as instructed for that part).
-  2. **SQL implementation** — open `tests/test_lab2.py` and, for each `Exercise`, fill in the `CREATE TABLE` statement for that table.
-
-     For grading to work, you must use the **exact table and column names** specified for the schema (capitalization does not matter, but spelling must match exactly). Column *types* are graded flexibly — e.g. `VARCHAR(50)` vs. `VARCHAR(120)` are both accepted — but table names, column names, primary keys, and foreign keys are graded strictly.
-
----
+  Write your SQL directly inside the triple quotes. Do not rename, delete, or restructure the surrounding test code ,only edit the SQL inside each block.
+  
 
 ## 3. Waiting for your repository to go public
 
 When you accept an assignment, your repository starts out private. A background process runs periodically and flips eligible lab repositories to public, this is required for grading to work correctly. This usually happens within about 15 minutes of accepting.
 
 **Do not push your solution or run `gh student submit` until your repository shows as Public** .
-
 ---
 
 ## 4. Starting from Lab 3: how grading works
 
 From Lab 3 onward, each lab includes a schema and a populated dataset that your queries run against:
-
 - **Lab 3** → `seed.sql`
 - **Lab 4** → `lab4_seed.sql`
 - **Lab 5** → `lab5_seed.sql`
 
-These files are already in your repo — you can look at the data directly to understand what you're querying.
+These files are already in your repo, you can look at the data directly to understand what you're querying.
 
 **Important:** Your SQL is also tested using a hidden dataset. Therefore, write general SQL queries that solve the question. Do not write queries that only match the specific values in the visible dataset.
 ---
