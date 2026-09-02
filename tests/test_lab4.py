@@ -129,11 +129,10 @@ def assert_matches_expected(cursor, shadow_cursor, sql, expected, shadow_expecte
             f"hidden verification dataset result mismatch: "
             f"expected {len(shadow_expected_rows)} row(s), "
             f"got {len(shadow_actual_rows)} row(s) "
-            f"(values withheld -- this dataset is intentionally hidden)"
         )
         if public_ok:
             details.append(
-                "    (this query matched the public dataset but NOT the hidden one "
+                "this query matched the public dataset but NOT the hidden one "
             )
 
     pytest.fail(f"{query_label} result mismatch:\n  " + "\n  ".join(details))
@@ -194,17 +193,14 @@ try:
     from lab4_answers import EXPECTED_RESULTS
 except ImportError as exc:
     raise ImportError(
-        "lab4_answers.py not found. This file holds the private expected "
-        "results for Lab 4 (public dataset) and is intentionally NOT "
-        "included in the student-facing repository."
+        "lab4_answers.py not found. This file holds the expected results"
     ) from exc
 
 try:
     from lab4_answers_shadow import EXPECTED_RESULTS as SHADOW_EXPECTED_RESULTS
 except ImportError as exc:
     raise ImportError(
-        "lab4_answers_shadow.py not found. This file holds the private "
-        "expected results for Lab 4's hidden verification dataset."
+        "lab4_answers_shadow.py not found. This file holds the private expected results "
     ) from exc
 
 
@@ -214,22 +210,17 @@ def test_01_query_1(cursor, shadow_cursor):
 
     Select all persons ordered by FullName (Person has no separate
     first/last name columns).
-
-    NOTE: this test also checks that the result is actually ORDERED by
-    FullName ascending, not just that it contains the right rows.
     """
     sql = """
     SELECT PersonID, FullName FROM Person ORDER BY FullName
     """
     assert_matches_expected(cursor, shadow_cursor, sql, EXPECTED_RESULTS[1], SHADOW_EXPECTED_RESULTS[1], "Q1")
 
-    # Order check: the multiset comparison above ignores row order, so a
-    # query returning the right rows in the wrong order would otherwise
-    # still pass. Checked against the public dataset only.
+    # Order check: 
     cursor.execute(sql)
     rows = cursor.fetchall()
     assert rows, (
-        "Q1: query returned zero rows -- Person should never be empty in "
+        "Q1: query returned zero rows  Person should never be empty in "
         "this seed; did you write the right query?"
     )
     names = [row[1] if len(row) > 1 else row[0] for row in rows]

@@ -277,17 +277,14 @@ try:
     from lab5_answers import EXPECTED_RESULTS
 except ImportError as exc:
     raise ImportError(
-        "lab5_answers.py not found. This file holds the private expected "
-        "view results for Lab 5 (public dataset) and is intentionally NOT "
-        "included in the student-facing repository."
+        "lab5_answers.py not found. This file holds the expected view results "
     ) from exc
 
 try:
     from lab5_answers_shadow import EXPECTED_RESULTS as SHADOW_EXPECTED_RESULTS
 except ImportError as exc:
     raise ImportError(
-        "lab5_answers_shadow.py not found. This file holds the private "
-        "expected view results for Lab 5's hidden verification dataset."
+        "lab5_answers_shadow.py not found. This file holds the private expected view "
     ) from exc
 
 
@@ -797,7 +794,6 @@ def test_14_trigger_allows_delete_of_empty_lab(cursor):
     """
     Trigger 4b: deleting a laboratory with NO dependent equipment or
     reservations must succeed
-
     Provoked on V0004 (EmptyLab), which has neither in this seed.
     """
     _assert_trigger_exists(cursor, "Laboratory", "DELETE", "BEFORE", "Trigger4-allowed")
