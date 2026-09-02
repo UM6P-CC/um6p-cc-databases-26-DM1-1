@@ -1,8 +1,4 @@
-# Data Management Labs — Student Guide
-
-This README explains how to work on and submit each lab (Lab 0 through Lab 5).
-
----
+# Data Management Labs 
 
 ## 1. Getting started with a lab
 
