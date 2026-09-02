@@ -142,47 +142,26 @@ def assert_matches_expected(cursor, shadow_cursor, sql, expected, shadow_expecte
 
     details = []
     if not public_ok:
-        # Safe to show literal values -- seed.sql is visible to the student.
         details.append(
             f"public dataset result mismatch:\n"
             f"    Expected ({len(expected_rows)} row(s)): {expected_rows}\n"
             f"    Got      ({len(actual_rows)} row(s)): {actual_rows}"
         )
     if not shadow_ok:
-        # Counts only -- seed_shadow.sql must never be revealed.
         details.append(
             f"hidden verification dataset result mismatch: "
             f"expected {len(shadow_expected_rows)} row(s), "
             f"got {len(shadow_actual_rows)} row(s) "
-            f"(values withheld -- this dataset is intentionally hidden)"
         )
         if public_ok:
             details.append(
                 "    (this query matched the public dataset but NOT the hidden "
-                "one -- if your SQL hardcodes specific ID values instead of "
-                "expressing the join/filter logic the question asks for, this "
-                "is the expected failure mode)"
             )
 
     pytest.fail(f"{query_label} result mismatch:\n  " + "\n  ".join(details))
 
 
-try:
-    from lab3_answers import EXPECTED_RESULTS
-except ImportError as exc:
-    raise ImportError(
-        "lab3_answers.py not found. 
-    ) from exc
-
-try:
-    from lab3_answers_shadow import EXPECTED_RESULTS as SHADOW_EXPECTED_RESULTS
-except ImportError as exc:
-    raise ImportError(
-        "lab3_answers_shadow.py not found. 
-    ) from exc
-
-
-# 
+ 
 def test_01_research_users_with_reservation(cursor, shadow_cursor):
     """
     Query 1

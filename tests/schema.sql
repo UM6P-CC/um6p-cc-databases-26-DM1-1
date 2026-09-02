@@ -1,6 +1,3 @@
--- RLMS Schema (reconstructed from Lab 1 requirements, Lab 2 answer-key fragments,
--- and the Chen ER diagram). VERIFY markers indicate fields whose exact name
--- I was not 100% certain of from prior sessions.
 
 CREATE DATABASE IF NOT EXISTS RLMS;
 USE RLMS;
@@ -20,10 +17,6 @@ CREATE TABLE ResearchUser (
     FOREIGN KEY (PersonID) REFERENCES Person(PersonID)
 );
 
--- The company itself: tracked independently of any individual technician.
--- ContactPerson/Phone here represent a generic point of contact for the
--- company (e.g. an account manager), which may differ from whichever
--- specific ExternalTechnician person is dispatched for a given job.
 CREATE TABLE ServiceProvider (
     ProviderID        CHAR(6) PRIMARY KEY,
     CompanyName       VARCHAR(120) NOT NULL,
@@ -39,22 +32,13 @@ CREATE TABLE TechnicalStaff (
     FOREIGN KEY (PersonID) REFERENCES Person(PersonID)
 );
 
--- ISA under TechnicalStaff: every technician is internal or external (total,
--- disjoint -- a TechnicalStaff row should have exactly one of these two
--- matching child rows). "Hire date" only makes sense for an employee, so it
--- moves here rather than living on the shared TechnicalStaff parent.
+
 CREATE TABLE InternalTechnician (
     PersonID CHAR(6) PRIMARY KEY,
     HireDate DATE,
     FOREIGN KEY (PersonID) REFERENCES TechnicalStaff(PersonID)
 );
 
--- An external technician is still a PERSON (they show up and do the work),
--- but they work on behalf of a company. CompanyName/ContractReference are
--- the technician's own attributes here (which company, under which
--- contract, they are currently associated with); the company itself -- with
--- its own generic point of contact, independent of any one technician -- is
--- tracked separately in ServiceProvider below.
 CREATE TABLE ExternalTechnician (
     PersonID          CHAR(6) PRIMARY KEY,
     CompanyName       VARCHAR(120),
@@ -125,7 +109,7 @@ CREATE TABLE Certification (
     CertificationCode CHAR(6) PRIMARY KEY,
     Title             VARCHAR(120) NOT NULL,
     IssuingAuthority  VARCHAR(100),
-    ValidityPeriod    INT,           -- VERIFY: months, or stored as duration
+    ValidityPeriod    INT,          
     SafetyLevel       VARCHAR(30)
 );
 
@@ -157,8 +141,8 @@ CREATE TABLE Reservation (
     Status              VARCHAR(20),  -- Pending, Approved, Rejected, Cancelled, Completed
     PersonID            CHAR(6) NOT NULL,
     SerialNumber        CHAR(10) NOT NULL,
-    ProjectCode         CHAR(6),       -- optional
-    ApprovedBy          CHAR(6),       -- optional
+    ProjectCode         CHAR(6), 
+    ApprovedBy          CHAR(6), 
     FOREIGN KEY (PersonID) REFERENCES ResearchUser(PersonID),
     FOREIGN KEY (SerialNumber) REFERENCES EquipmentUnit(SerialNumber),
     FOREIGN KEY (ProjectCode) REFERENCES ResearchProject(ProjectCode),
@@ -173,31 +157,25 @@ CREATE TABLE UsageSession (
     Outcome         VARCHAR(100),
     SerialNumber    CHAR(10) NOT NULL,
     ResearchUserID  CHAR(6) NOT NULL,
-    ReservationID   CHAR(6),   -- optional
-    ProjectCode     CHAR(6),   -- optional
+    ReservationID   CHAR(6),
+    ProjectCode     CHAR(6),
     FOREIGN KEY (SerialNumber) REFERENCES EquipmentUnit(SerialNumber),
     FOREIGN KEY (ResearchUserID) REFERENCES ResearchUser(PersonID),
     FOREIGN KEY (ReservationID) REFERENCES Reservation(ReservationID),
     FOREIGN KEY (ProjectCode) REFERENCES ResearchProject(ProjectCode)
 );
 
--- VERIFY: Maintenance technician is "exactly one technician, internal or
--- external" per Lab 1 text -> the internal/external distinction now lives
--- in the TechnicalStaff ISA hierarchy (InternalTechnician/ExternalTechnician
--- above) rather than as two separate nullable FKs here, so Maintenance only
--- needs a single FK to TechnicalStaff.
+
 CREATE TABLE Maintenance (
     MaintenanceID    CHAR(6) PRIMARY KEY,
     MaintenanceDate  DATE,
     MaintenanceType  VARCHAR(30),  -- Preventive / Corrective
     Description      VARCHAR(255),
     Cost             DECIMAL(10,2),
-    DowntimeDuration INT,          -- VERIFY: unit (hours?)
+    DowntimeDuration INT,
     Outcome          VARCHAR(100),
     SerialNumber     CHAR(10) NOT NULL,
-    TechnicianID     CHAR(6) NOT NULL,  -- FK -> TechnicalStaff(PersonID); resolves
-                                         -- to an InternalTechnician or
-                                         -- ExternalTechnician row
+    TechnicianID     CHAR(6) NOT NULL,
     FOREIGN KEY (SerialNumber) REFERENCES EquipmentUnit(SerialNumber),
     FOREIGN KEY (TechnicianID) REFERENCES TechnicalStaff(PersonID)
 );
